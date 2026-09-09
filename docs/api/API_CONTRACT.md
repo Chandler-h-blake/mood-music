@@ -1,0 +1,216 @@
+# MoodMusic API 与连接器契约
+
+## 1 契约原则
+
+MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化契约协作。实现前先确定 schema，再生成 TypeScript 与 Python 类型。任何不兼容变化必须增加主版本并提供迁移说明。
+
+首期 HTTP 前缀为 `/api/v1`。所有 JSON 字段使用 `camelCase`，数据库与 Python 内部可以使用 `snake_case`，但转换必须集中在 schema 层。
+
+## 2 通用约定
+
+### 请求头
+
+| 请求头 | 用途 |
+| --- | --- |
+| `X-Request-Id` | 调用方生成的 UUID；缺失时服务端生成 |
+| `Idempotency-Key` | 导入、任务创建、队列提交等可重试写操作必填 |
+| `Content-Type` | JSON 请求使用 `application/json` |
+
+### 通用错误
+
+```json
+{
+  "error": {
+    "code": "connector.offline",
+    "message": "QQ 音乐连接器当前不在线",
+    "requestId": "0c50145d-66a6-4e71-8e18-d1c24f2d13fd",
+    "details": {
+      "requiredCapability": "queue.play"
+    }
+  }
+}
+```
+
+错误码使用稳定的 `domain.reason`，用户消息使用中文，`details` 不得包含密钥、Cookie、受保护 URL 或第三方原始响应全文。
+
+## 3 HTTP 资源
+
+### 健康与版本
+
+- `GET /api/v1/health`：API、数据库和任务执行器健康状态。
+- `GET /api/v1/version`：应用版本、schema 版本和支持的连接器协议范围。
+
+### 设置与提供方
+
+- `GET /api/v1/settings`：返回去敏配置和密钥是否已设置。
+- `PATCH /api/v1/settings`：更新非敏感配置。
+- `PUT /api/v1/credentials/{provider}`：把密钥写入操作系统凭据存储。
+- `DELETE /api/v1/credentials/{provider}`：删除密钥。
+- `POST /api/v1/providers/{provider}/test`：测试模型或搜索连接。
+
+密钥写入响应只返回凭据引用 ID 和掩码，永远不返回原值。
+
+### 音乐库
+
+- `POST /api/v1/library/imports`：创建手动或连接器导入批次。
+- `GET /api/v1/library/imports/{importId}`：读取统计、游标和错误。
+- `GET /api/v1/library/songs`：分页读取喜欢歌曲与画像状态。
+- `GET /api/v1/library/songs/{songId}`：读取歌曲、当前画像和人工覆盖。
+- `PATCH /api/v1/library/songs/{songId}/overrides`：修改并锁定画像字段。
+- `POST /api/v1/library/sync`：请求在线连接器执行同步。
+
+导入示例：
+
+```json
+{
+  "source": "qqmusic-web-connector",
+  "connectorInstallationId": "c79d6420-b15d-4ae6-8708-1cf87ea31409",
+  "cursor": null,
+  "songs": [
+    {
+      "provider": "qqmusic",
+      "sourceTrackId": "platform-track-id",
+      "title": "示例歌曲",
+      "artists": [{"name": "示例歌手"}],
+      "album": null,
+      "durationMs": null
+    }
+  ]
+}
+```
+
+### 画像任务
+
+- `POST /api/v1/profile-jobs`：创建初始化或增量画像任务。
+- `GET /api/v1/jobs/{jobId}`：读取状态、进度和失败分类。
+- `POST /api/v1/jobs/{jobId}/pause`：请求在安全 checkpoint 暂停。
+- `POST /api/v1/jobs/{jobId}/resume`：继续任务。
+- `POST /api/v1/jobs/{jobId}/cancel`：请求取消。
+- `POST /api/v1/jobs/{jobId}/retry`：重试可恢复失败。
+- `GET /api/v1/jobs/{jobId}/events`：SSE 任务事件。
+
+任务创建响应使用 `202 Accepted`，返回 `jobId` 与事件地址。
+
+### 搜索会话
+
+- `POST /api/v1/search-sessions`：创建自然语言搜索。
+- `GET /api/v1/search-sessions/{sessionId}`：读取意图、状态和候选集合。
+- `GET /api/v1/search-sessions/{sessionId}/events`：SSE 搜索进度。
+- `POST /api/v1/search-sessions/{sessionId}/refinements`：追加会话要求。
+- `DELETE /api/v1/search-sessions/{sessionId}/candidates/{candidateId}`：从当前会话删除候选。
+- `PATCH /api/v1/search-sessions/{sessionId}/candidate-order`：保存拖动结果。
+- `POST /api/v1/search-sessions/{sessionId}/sorts`：对同一候选集合执行排序。
+
+创建搜索示例：
+
+```json
+{
+  "description": "凌晨开车时有一点孤独，但不要太悲伤",
+  "matchingPolicy": "balanced",
+  "sortMode": "match",
+  "library": "liked"
+}
+```
+
+排序请求：
+
+```json
+{
+  "mode": "emotionCurve",
+  "curve": {
+    "start": "calm",
+    "middle": "slightlyLifted",
+    "end": "settled"
+  },
+  "randomSeed": null
+}
+```
+
+允许的模式为 `match`、`emotionCurve` 和 `random`。排序响应必须返回同一 `candidateSetHash`，否则客户端拒绝应用。
+
+### 队列与播放列表
+
+- `POST /api/v1/generated-playlists`：从搜索会话保存临时队列快照。
+- `GET /api/v1/generated-playlists/{playlistId}`：读取快照、排序和保存状态。
+- `POST /api/v1/playback/queues`：校验后提交给连接器。
+- `POST /api/v1/playback/actions`：暂停、继续、上一首、下一首或停止。
+- `GET /api/v1/playback/events`：SSE 播放状态。
+- `POST /api/v1/generated-playlists/{playlistId}/save-to-provider`：明确请求保存正式平台歌单。
+
+队列命令必须包含 `playlistId`、`snapshotHash`、`stopAfterLast=true` 和按顺序排列的 `sourceTrackId`。包含非喜欢歌曲时必须带 `source=external` 和用户明确加入的审计事件。
+
+### 外部发现
+
+- `POST /api/v1/external-discovery-jobs`：按搜索会话、候选集合或歌曲创建任务。
+- `GET /api/v1/external-discovery-jobs/{jobId}`：读取校验通过的建议。
+- `POST /api/v1/external-suggestions/{suggestionId}/actions`：试听、打开、加入喜欢、手动入队或不感兴趣。
+
+未校验结果只用于内部诊断，不在普通响应中返回。
+
+## 4 SSE 事件
+
+事件类型：
+
+- `job.progress`
+- `job.paused`
+- `job.completed`
+- `job.failed`
+- `search.stageChanged`
+- `search.completed`
+- `connector.statusChanged`
+- `playback.stateChanged`
+
+示例：
+
+```text
+event: job.progress
+id: 148
+data: {"jobId":"...","completed":420,"total":1087,"failed":3}
+```
+
+客户端断线重连时发送 `Last-Event-ID`。服务端保留足以恢复当前任务的事件游标，但数据库实体状态始终是真实来源。
+
+## 5 连接器 WebSocket 协议
+
+连接地址只绑定本机，例如 `ws://127.0.0.1:{port}/connector/v1`。第一次连接使用短时配对代码，成功后换取可撤销令牌。
+
+### 消息信封
+
+```json
+{
+  "protocolVersion": "1.0",
+  "type": "playback.queueRequested",
+  "requestId": "aa286865-1a76-4bfe-99fa-6358f2c37387",
+  "sentAt": "2026-09-08T10:00:00Z",
+  "payload": {}
+}
+```
+
+### 核心消息
+
+- `connector.hello`：扩展版本、浏览器、页面适配器版本和能力。
+- `connector.heartbeat`：活跃页面和连接状态。
+- `library.syncRequested` / `library.syncPage` / `library.syncCompleted`。
+- `catalog.searchRequested` / `catalog.searchCompleted`。
+- `playback.queueRequested` / `playback.queueAccepted` / `playback.queueRejected`。
+- `playback.actionRequested` / `playback.stateChanged`。
+- `playlist.saveRequested` / `playlist.saveCompleted`。
+
+### 能力名称
+
+- `library.read`
+- `catalog.search`
+- `queue.play`
+- `playback.control`
+- `playback.state`
+- `playlist.save`
+
+能力未声明时，API 不得下发相应命令。
+
+## 6 合约演进
+
+- OpenAPI 是 HTTP 契约的唯一机器可读来源。
+- JSON Schema 是连接器消息的唯一机器可读来源。
+- `packages/contracts` 保存 schema、生成脚本和 TypeScript 产物；Python 模型从相同 schema 生成或进行一致性测试。
+- CI 检查破坏性变化、生成文件漂移和示例有效性。
+- 契约变化必须更新本文件、CHANGELOG、测试和对应 ADR。
