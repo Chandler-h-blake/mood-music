@@ -36,6 +36,7 @@
 - [开发指南](development/DEVELOPMENT_GUIDE.md)：分支、环境、迁移、提交和评审流程。
 - [编码规范](development/CODING_STANDARDS.md)：跨语言命名、模块边界和代码质量规则。
 - [安全与隐私](development/SECURITY_AND_PRIVACY.md)：密钥、QQ 登录态、音频和日志边界。
+- [QQ 音乐兼容性记录](development/QQMUSIC_COMPATIBILITY.md)：真实接口验证范围、结果和当前限制。
 - [测试策略](quality/TEST_STRATEGY.md)：测试层级、AI 评测集和发布门槛。
 
 ## 历史参考

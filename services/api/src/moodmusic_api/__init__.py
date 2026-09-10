@@ -1,0 +1,1 @@
+"""MoodMusic local API."""

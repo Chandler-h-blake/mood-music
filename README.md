@@ -4,7 +4,7 @@ MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不�
 
 本仓库采用“独立 Web 应用 + 本机 QQ 音乐数据适配器 + QQ 音乐网页版播放连接器”的产品形态。MoodMusic 后端使用用户手动粘贴并由 Windows 安全存储保护的 QQ 音乐 Cookie，只读同步当前账号的“我喜欢”；浏览器扩展负责把确认队列交给 QQ 音乐网页版播放。项目不修改 QQ 音乐安装文件，不下载或转发受保护音频，也不绕过会员、地区、版权或 DRM 限制。
 
-> 当前状态：项目骨架与基线文档已建立，尚未开始功能代码开发。MoodMusic 是暂定产品名，可以通过架构决策记录统一更名。
+> 当前状态：产品与架构基线已建立；首个 FastAPI 纵向切片已通过真实账号验证，可以保存/清除 QQ 音乐 Cookie、验证登录状态并只读预览“我喜欢”第一页。尚未接入数据库、前端和完整分页。MoodMusic 是暂定产品名，可以通过架构决策记录统一更名。
 
 ## 产品要解决的问题
 
@@ -128,7 +128,31 @@ mood-music/
 
 ## 运行说明
 
-当前仓库只有文档和目录基线，尚无可运行代码，因此暂不提供伪造的安装命令。进入工程实现阶段后，将由各模块的实际清单生成并验证以下统一命令：
+当前可运行的是 FastAPI 首个纵向切片。进入仓库后激活 D 盘 Conda 环境：
+
+```powershell
+conda activate D:\Program\CondaEnvs\mood-music
+Set-Location services\api
+python -m pip install -e ".[dev]"
+$env:MOODMUSIC_DATA_DIR = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) '..\..\data'))
+python -m uvicorn moodmusic_api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+浏览器打开 `http://127.0.0.1:8000/docs`，按顺序执行：
+
+1. `PUT /api/v1/credentials/qqmusic-cookie`：只在本机 Swagger 页面粘贴 Cookie。
+2. `POST /api/v1/providers/qqmusic-cookie/test`：验证登录状态。
+3. `POST /api/v1/library/sync-preview`：查看“我喜欢”第一页和总数，不写数据库。
+4. `DELETE /api/v1/credentials/qqmusic-cookie`：需要时从 Windows 凭据存储清除 Cookie。
+
+不要把真实 Cookie 粘贴到终端、源码、`.env`、Issue、提交信息或聊天。开发检查使用：
+
+```powershell
+python -m ruff check .
+python -m pytest
+```
+
+后续工程完善后，仓库将提供统一入口：
 
 ```text
 make setup    安装并校验开发依赖

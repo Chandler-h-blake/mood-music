@@ -60,6 +60,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `GET /api/v1/library/songs/{songId}`：读取歌曲、当前画像和人工覆盖。
 - `PATCH /api/v1/library/songs/{songId}/overrides`：修改并锁定画像字段。
 - `POST /api/v1/library/sync`：创建 QQ 音乐只读适配器同步任务；凭据只由服务端凭据代理按引用读取。
+- `POST /api/v1/library/sync-preview`：在数据库接入前只读获取“我喜欢”第一页，用于验证当前 Cookie 与字段映射；响应标记 `diagnosticOnly=true`，不持久化数据。
 
 导入示例：
 

@@ -15,3 +15,6 @@
 - 建立产品、架构、数据、接口、质量和开发规范文档。
 - 建立 Web、API、浏览器扩展、共享契约、基础设施和端到端测试目录。
 - 确定独立 Web 应用与 QQ 音乐网页版连接器的目标形态。
+- 建立首个可运行的 FastAPI 纵向切片：Windows 凭据存储中的 QQ 音乐 Cookie、登录验证和“我喜欢”第一页只读预览。
+- 使用 Windows DPAPI 加密文件保存长 Cookie，避免 Credential Manager 单条凭据容量限制导致保存失败。
+- 允许开发进程通过 `MOODMUSIC_DATA_DIR` 把 DPAPI 密文写入 Git 忽略的数据目录，避免受控开发环境阻止标准用户目录写入。
