@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
+from sqlalchemy.exc import SQLAlchemyError
 
 from .credentials import (
     CredentialStore,
@@ -11,7 +12,15 @@ from .credentials import (
     InvalidCookieError,
     WindowsCredentialStore,
 )
-from .models import CredentialStatus, LikedPagePreview, QQMusicCookieInput
+from .database import Database
+from .library import LibraryDatabaseError, LibraryService, LibrarySyncInProgressError
+from .models import (
+    CredentialStatus,
+    LibrarySongPage,
+    LibrarySyncResult,
+    LikedPagePreview,
+    QQMusicCookieInput,
+)
 from .qqmusic import QQMusicAuthenticationError, QQMusicClient, QQMusicRequestError
 
 
@@ -23,6 +32,16 @@ def get_credential_store() -> CredentialStore:
 @lru_cache
 def get_qqmusic_client() -> QQMusicClient:
     return QQMusicClient()
+
+
+@lru_cache
+def get_database() -> Database:
+    return Database()
+
+
+@lru_cache
+def get_library_service() -> LibraryService:
+    return LibraryService(get_database())
 
 
 def require_cookie(store: CredentialStore) -> str:
@@ -55,6 +74,19 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": "moodmusic-api"}
 
+    @app.get("/api/v1/health/ready")
+    async def readiness(
+        database: Annotated[Database, Depends(get_database)],
+    ) -> dict[str, str]:
+        try:
+            await database.ping()
+        except SQLAlchemyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "database.unavailable", "message": "PostgreSQL 尚未就绪。"},
+            ) from exc
+        return {"status": "ready", "database": "ok"}
+
     @app.put(
         "/api/v1/credentials/qqmusic-cookie",
         response_model=CredentialStatus,
@@ -78,7 +110,7 @@ def create_app() -> FastAPI:
         return CredentialStatus(
             configured=True,
             valid=None,
-            message="Cookie 已保存到 Windows 凭据存储，请继续验证登录状态。",
+            message="Cookie 已保存到本机 DPAPI 加密凭据存储，请继续验证登录状态。",
         )
 
     @app.delete(
@@ -151,6 +183,56 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail={"code": "qqmusic.requestFailed", "message": str(exc)},
+            ) from exc
+
+    @app.post(
+        "/api/v1/library/sync",
+        response_model=LibrarySyncResult,
+    )
+    async def sync_liked_library(
+        store: Annotated[CredentialStore, Depends(get_credential_store)],
+        client: Annotated[QQMusicClient, Depends(get_qqmusic_client)],
+        library: Annotated[LibraryService, Depends(get_library_service)],
+    ) -> LibrarySyncResult:
+        cookie = require_cookie(store)
+        try:
+            return await library.sync_liked(cookie, client)
+        except QQMusicAuthenticationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "qqmusic.cookieExpired", "message": str(exc)},
+            ) from exc
+        except QQMusicRequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"code": "qqmusic.snapshotFailed", "message": str(exc)},
+            ) from exc
+        except LibrarySyncInProgressError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "library.syncInProgress", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.get(
+        "/api/v1/library/songs",
+        response_model=LibrarySongPage,
+    )
+    async def list_liked_songs(
+        library: Annotated[LibraryService, Depends(get_library_service)],
+        page: Annotated[int, Query(ge=0)] = 0,
+        page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 50,
+    ) -> LibrarySongPage:
+        try:
+            return await library.list_liked_songs(page=page, page_size=page_size)
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
 
     return app

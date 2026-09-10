@@ -37,7 +37,8 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 ### 健康与版本
 
-- `GET /api/v1/health`：API、数据库和任务执行器健康状态。
+- `GET /api/v1/health`：API 进程健康状态。
+- `GET /api/v1/health/ready`：API 与 PostgreSQL 就绪状态。
 - `GET /api/v1/version`：应用版本、schema 版本和支持的连接器协议范围。
 
 ### 设置与提供方
@@ -59,7 +60,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `GET /api/v1/library/songs`：分页读取喜欢歌曲与画像状态。
 - `GET /api/v1/library/songs/{songId}`：读取歌曲、当前画像和人工覆盖。
 - `PATCH /api/v1/library/songs/{songId}/overrides`：修改并锁定画像字段。
-- `POST /api/v1/library/sync`：创建 QQ 音乐只读适配器同步任务；凭据只由服务端凭据代理按引用读取。
+- `POST /api/v1/library/sync`：顺序读取 QQ 音乐“我喜欢”全部分页并原子更新本地数据库；当前阶段等待同步完成后返回 `200`，后台任务化后再升级为 `202`。凭据只由服务端凭据代理读取。
 - `POST /api/v1/library/sync-preview`：在数据库接入前只读获取“我喜欢”第一页，用于验证当前 Cookie 与字段映射；响应标记 `diagnosticOnly=true`，不持久化数据。
 
 导入示例：
@@ -81,6 +82,8 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
   ]
 }
 ```
+
+完整同步响应包含 `runId`、`status`、`pagesFetched`、`reportedTotal`、`fetchedCount`、`uniqueCount`、`insertedCount`、`updatedCount`、`deactivatedCount` 和 `skippedMissingId`。任何页面失败或完整性校验失败时，不修改最近一次成功的成员关系。
 
 ### 画像任务
 

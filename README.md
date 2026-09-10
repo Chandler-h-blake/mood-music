@@ -4,7 +4,7 @@ MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不�
 
 本仓库采用“独立 Web 应用 + 本机 QQ 音乐数据适配器 + QQ 音乐网页版播放连接器”的产品形态。MoodMusic 后端使用用户手动粘贴并由 Windows 安全存储保护的 QQ 音乐 Cookie，只读同步当前账号的“我喜欢”；浏览器扩展负责把确认队列交给 QQ 音乐网页版播放。项目不修改 QQ 音乐安装文件，不下载或转发受保护音频，也不绕过会员、地区、版权或 DRM 限制。
 
-> 当前状态：产品与架构基线已建立；首个 FastAPI 纵向切片已通过真实账号验证，可以保存/清除 QQ 音乐 Cookie、验证登录状态并只读预览“我喜欢”第一页。尚未接入数据库、前端和完整分页。MoodMusic 是暂定产品名，可以通过架构决策记录统一更名。
+> 当前状态：QQ 音乐音乐库纵向切片已通过真实账号验证，可以安全保存/清除 Cookie、验证登录、自动读取全部分页、去重并增量同步到本机 PostgreSQL + pgvector。前端、歌曲画像、自然语言筛选和播放连接器仍待开发。MoodMusic 是暂定产品名，可以通过架构决策记录统一更名。
 
 ## 产品要解决的问题
 
@@ -128,12 +128,20 @@ mood-music/
 
 ## 运行说明
 
-当前可运行的是 FastAPI 首个纵向切片。进入仓库后激活 D 盘 Conda 环境：
+当前可运行的是 FastAPI 音乐库纵向切片。进入仓库后先启动数据库：
+
+```powershell
+docker compose -f infra\docker\compose.yml up -d
+```
+
+然后激活 D 盘 Conda 环境，安装 API 依赖并执行迁移：
 
 ```powershell
 conda activate D:\Program\CondaEnvs\mood-music
 Set-Location services\api
 python -m pip install -e ".[dev]"
+$env:DATABASE_URL = "postgresql+asyncpg://moodmusic:moodmusic@127.0.0.1:5432/moodmusic"
+python -m alembic upgrade head
 $env:MOODMUSIC_DATA_DIR = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) '..\..\data'))
 python -m uvicorn moodmusic_api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -143,7 +151,11 @@ python -m uvicorn moodmusic_api.main:app --host 127.0.0.1 --port 8000 --reload
 1. `PUT /api/v1/credentials/qqmusic-cookie`：只在本机 Swagger 页面粘贴 Cookie。
 2. `POST /api/v1/providers/qqmusic-cookie/test`：验证登录状态。
 3. `POST /api/v1/library/sync-preview`：查看“我喜欢”第一页和总数，不写数据库。
-4. `DELETE /api/v1/credentials/qqmusic-cookie`：需要时从 Windows 凭据存储清除 Cookie。
+4. `POST /api/v1/library/sync`：读取全部分页并原子更新本地曲库；请求成功前不会替换最近一次完整状态。
+5. `GET /api/v1/library/songs`：分页查看数据库中当前有效的“喜欢”歌曲。
+6. `DELETE /api/v1/credentials/qqmusic-cookie`：需要时从本机 DPAPI 加密凭据存储清除 Cookie。
+
+`GET /api/v1/health` 检查 API 进程，`GET /api/v1/health/ready` 同时验证 PostgreSQL。Docker 数据保存在命名卷 `moodmusic_moodmusic-postgres-data`；普通 `docker compose down` 不会删除它。
 
 不要把真实 Cookie 粘贴到终端、源码、`.env`、Issue、提交信息或聊天。开发检查使用：
 

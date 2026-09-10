@@ -18,3 +18,6 @@
 - 建立首个可运行的 FastAPI 纵向切片：Windows 凭据存储中的 QQ 音乐 Cookie、登录验证和“我喜欢”第一页只读预览。
 - 使用 Windows DPAPI 加密文件保存长 Cookie，避免 Credential Manager 单条凭据容量限制导致保存失败。
 - 允许开发进程通过 `MOODMUSIC_DATA_DIR` 把 DPAPI 密文写入 Git 忽略的数据目录，避免受控开发环境阻止标准用户目录写入。
+- 增加 PostgreSQL 16 + pgvector Docker Compose、本地健康检查和 Alembic 首版音乐库迁移。
+- 增加 QQ 音乐“我喜欢”自动全分页、完整性保护、平台 ID 去重与缺失 ID 稳定哈希回退。
+- 增加原子增量同步批次、歌曲与喜欢成员关系持久化，以及本地曲库分页查询 API。
