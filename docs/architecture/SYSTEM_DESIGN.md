@@ -2,9 +2,9 @@
 
 ## 1 架构结论
 
-MoodMusic 采用模块化单体与浏览器扩展组合。Next.js Web、FastAPI API、后台任务和 PostgreSQL 构成可独立运行的核心系统；QQ 音乐连接器通过版本化本机协议接入，不允许其页面细节渗透到搜索、画像或播放列表领域。
+MoodMusic 采用模块化单体、QQ 音乐数据适配器与浏览器播放扩展组合。Next.js Web、FastAPI API、后台任务和 PostgreSQL 构成可独立运行的核心系统；数据适配器隔离 QQ 音乐只读内部接口，播放扩展通过版本化本机协议接入，两者的第三方细节都不得渗透到搜索、画像或播放列表领域。
 
-首期保持单机、单用户和本地优先。模型请求仍调用用户选择的云端提供方，但 QQ 登录态、歌曲成员关系、历史、画像和密钥控制留在本机。系统规模以一千至数千首歌曲为主，优先选择正确性、可恢复性和可审计性。
+首期保持单机、单用户和本地优先。模型请求仍调用用户选择的云端提供方，但 QQ 音乐 Cookie、歌曲成员关系、历史、画像和密钥控制留在本机。Cookie 和模型 API Key 进入操作系统凭据存储，不进入业务数据库或模型请求。系统规模以一千至数千首歌曲为主，优先选择正确性、可恢复性和可审计性。
 
 ## 2 上下文与数据流
 
@@ -18,6 +18,9 @@ flowchart TB
     LLM["聊天模型"]
     Embed["Embedding 模型"]
     Search["外部搜索提供方"]
+    CredentialStore["Windows 凭据存储 / DPAPI"]
+    QQLibrary["QQMusicLibraryProvider"]
+    QQAPI["QQ 音乐只读内部接口"]
     Bridge["本机连接器网关"]
     Extension["Manifest V3 扩展"]
     QQ["QQ 音乐网页版"]
@@ -32,6 +35,10 @@ flowchart TB
     Jobs --> LLM
     Jobs --> Embed
     API --> Search
+    API --> CredentialStore
+    API --> QQLibrary
+    QQLibrary --> CredentialStore
+    QQLibrary -->|"低频只读同步"| QQAPI
     API <--> Bridge
     Bridge <-->|"配对 WebSocket"| Extension
     Extension <--> QQ
@@ -39,12 +46,12 @@ flowchart TB
 
 主要数据流：
 
-1. 扩展从 QQ 音乐页面读取可见歌曲身份，通过配对通道发送导入批次。
-2. API 规范化身份并持久化喜欢成员关系，再创建增量画像任务。
+1. 用户在设置页把已登录的 QQ 音乐 Cookie 提交给只监听环回地址的 API；凭据代理将其写入 Windows 安全存储并验证状态。
+2. `QQMusicLibraryProvider` 使用该凭据分页读取“我喜欢”，规范化身份并持久化喜欢成员关系，再创建增量画像任务。
 3. 任务执行器调用模型生成经过 schema 校验的字段和向量。
 4. 搜索请求写入会话，API 计算全量得分并对边界候选调用模型复核。
 5. 用户确认队列后，API 再次检查喜欢成员关系，把版本化命令发送给扩展。
-6. 扩展驱动网页播放器并回传状态；核心系统不接触 QQ Cookie 或音频流。
+6. 播放扩展驱动网页播放器并回传状态；核心业务不读取 Cookie，数据适配器不接触音频流。
 
 ## 3 逻辑模块
 
@@ -54,9 +61,9 @@ flowchart TB
 
 - `/library`：喜欢曲库、同步状态、待确认歌曲和画像覆盖率。
 - `/discover`：自然语言输入、候选预览、会话追加要求和三种排序。
-- `/history`：搜索会话、生成队列和正式保存状态。
+- `/history`：搜索会话、生成队列和清单导出状态。
 - `/profiles/[songId]`：画像值、来源、置信度、人工修改和锁定。
-- `/settings`：提供方、模型、预算、连接器状态与隐私说明。
+- `/settings`：模型提供方、预算、QQ 音乐 Cookie 设置与验证、播放连接器状态和隐私说明。
 
 Web 不直接调用模型、访问数据库或持有服务端密钥。业务状态来自 API；长任务使用 SSE 接收状态，播放状态可以通过 API 的 SSE 或短周期查询更新。
 
@@ -70,8 +77,8 @@ Web 不直接调用模型、访问数据库或持有服务端密钥。业务状�
 - `semantic_search`：意图、向量、评分、阈值和边界复核。
 - `playlists`：候选、排序、历史、保存和队列快照。
 - `external_discovery`：联网搜索、身份校验和外部标记。
-- `connectors`：配对、能力协商、命令和状态。
-- `providers`：聊天、Embedding、联网搜索和凭据引用。
+- `connectors`：播放扩展配对、能力协商、命令和状态。
+- `providers`：QQ 音乐只读同步、聊天、Embedding、联网搜索和凭据引用。
 
 模块之间通过显式服务接口和领域对象协作，不允许从路由层直接拼接 SQL 或调用第三方 SDK。
 
@@ -81,9 +88,15 @@ Web 不直接调用模型、访问数据库或持有服务端密钥。业务状�
 
 只有出现多主机、吞吐或运维证据时，才通过 ADR 引入 Redis 与 Celery。迁移时必须保持现有任务语义和 API 不变。
 
-### 3.4 QQ 音乐连接器
+### 3.4 QQ 音乐数据适配器
 
-扩展是反腐层：QQ 页面上的 DOM、按钮、滚动和状态被翻译成稳定的内部契约。核心服务只认识 `ExternalSongRef`、`ConnectorCapability`、`PlaybackCommand` 和 `PlaybackEvent`，不认识 CSS selector。
+`QQMusicLibraryProvider` 是数据反腐层：它负责登录状态验证、必要公共参数、分页、响应校验、错误分类和字段映射。核心服务只认识 `ExternalSongRef`、`LikedMembership` 和导入批次，不认识 QQ 音乐的 URL、模块名、Cookie 字段或原始响应。
+
+凭据代理按需从 Windows 安全存储短时取得 Cookie；不得把明文返回给路由、worker 任务载荷或数据库模型。首版只读能力 allowlist 为登录状态和“我喜欢”同步，接口失效时保留最近一次成功曲库并允许 CSV 导入。
+
+### 3.5 QQ 音乐播放连接器
+
+扩展是播放反腐层：QQ 页面上的 DOM、按钮和状态被翻译成稳定的内部契约。核心服务只认识 `ExternalSongRef`、`ConnectorCapability`、`PlaybackCommand` 和 `PlaybackEvent`，不认识 CSS selector。扩展不承担首版音乐库同步，也不导出浏览器 Cookie。
 
 ## 4 搜索与匹配算法
 
@@ -137,7 +150,14 @@ Web 不直接调用模型、访问数据库或持有服务端密钥。业务状�
 - 所有写操作接收 `Idempotency-Key` 或请求体 `requestId`。
 - 错误统一使用 `code`、`message`、`requestId` 和可选 `details`。
 
-### 5.2 API 到扩展
+### 5.2 Cookie 设置与音乐库同步
+
+- Cookie 写入和验证端点只接受来自配置的本机 Web Origin，并要求 CSRF 防护。
+- 写入后只返回凭据引用与去敏状态，不返回 Cookie 原文。
+- 同步任务保存分页游标、导入批次和错误类别，不保存包含登录态的原始请求或响应。
+- 遇到未登录或凭据失效时停止任务，保留已有曲库并要求用户更新 Cookie。
+
+### 5.3 API 到播放扩展
 
 - 网关只监听 `127.0.0.1`，端口可配置。
 - 首次配对由 Web 显示短时一次性代码，扩展换取可撤销令牌。
@@ -159,17 +179,18 @@ Web 不直接调用模型、访问数据库或持有服务端密钥。业务状�
 
 ```text
 Windows 浏览器
-├─ QQ 音乐网页和连接器扩展
+├─ QQ 音乐网页和播放连接器扩展
 └─ MoodMusic Web
 
 Windows 本机
 ├─ Next.js 开发或生产进程
 ├─ FastAPI API
 ├─ 后台 worker
+├─ Windows 凭据存储中的 QQ 音乐 Cookie 与模型 API Key
 └─ PostgreSQL 和 pgvector 容器
 ```
 
-默认不开放局域网监听。若未来部署云端 Web，QQ 连接器和凭据代理仍需保留本机边界，并通过新的威胁建模和 ADR 审批。
+默认不开放局域网监听。若未来部署云端 Web，QQ 音乐 Cookie、数据适配器、播放连接器和凭据代理仍需保留本机边界，并通过新的威胁建模和 ADR 审批。
 
 ## 8 可观测性
 
@@ -180,7 +201,8 @@ Windows 本机
 
 ## 9 架构约束
 
-- 核心域不得导入浏览器 DOM 类型或 QQ 页面选择器。
+- 核心域不得导入浏览器 DOM 类型、QQ 页面选择器、QQ 私有接口响应或 Cookie 字段。
+- QQ 音乐私有接口调用只能存在于只读数据适配器；新增写能力、音频 URL 或登录模拟必须另立 ADR。
 - Provider SDK 不得从路由、React 组件或数据库模型直接调用。
 - 不允许把聊天模型当作数据库或事实来源。
 - 不允许把外部建议复用为主候选而跳过喜欢成员校验。

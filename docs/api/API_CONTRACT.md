@@ -22,7 +22,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 {
   "error": {
     "code": "connector.offline",
-    "message": "QQ 音乐连接器当前不在线",
+    "message": "QQ 音乐播放连接器当前不在线",
     "requestId": "0c50145d-66a6-4e71-8e18-d1c24f2d13fd",
     "details": {
       "requiredCapability": "queue.play"
@@ -46,9 +46,11 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `PATCH /api/v1/settings`：更新非敏感配置。
 - `PUT /api/v1/credentials/{provider}`：把密钥写入操作系统凭据存储。
 - `DELETE /api/v1/credentials/{provider}`：删除密钥。
-- `POST /api/v1/providers/{provider}/test`：测试模型或搜索连接。
+- `POST /api/v1/providers/{provider}/test`：测试模型、搜索或 QQ 音乐登录连接。
 
-密钥写入响应只返回凭据引用 ID 和掩码，永远不返回原值。
+`provider=qqmusic-cookie` 时，`PUT` 请求接收用户主动粘贴的 Cookie，`POST /api/v1/providers/qqmusic-cookie/test` 验证 QQ 音乐登录状态，`DELETE` 清除本机 Cookie。Cookie 与模型密钥使用独立凭据名称。
+
+凭据写入响应只返回凭据引用 ID、`configured`、验证状态、可确定的过期时间和掩码信息，永远不返回原值。Cookie 请求体不得进入访问日志或错误监控。
 
 ### 音乐库
 
@@ -57,14 +59,14 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `GET /api/v1/library/songs`：分页读取喜欢歌曲与画像状态。
 - `GET /api/v1/library/songs/{songId}`：读取歌曲、当前画像和人工覆盖。
 - `PATCH /api/v1/library/songs/{songId}/overrides`：修改并锁定画像字段。
-- `POST /api/v1/library/sync`：请求在线连接器执行同步。
+- `POST /api/v1/library/sync`：创建 QQ 音乐只读适配器同步任务；凭据只由服务端凭据代理按引用读取。
 
 导入示例：
 
 ```json
 {
-  "source": "qqmusic-web-connector",
-  "connectorInstallationId": "c79d6420-b15d-4ae6-8708-1cf87ea31409",
+  "source": "qqmusic-cookie-sync",
+  "connectorInstallationId": null,
   "cursor": null,
   "songs": [
     {
@@ -135,7 +137,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `POST /api/v1/playback/queues`：校验后提交给连接器。
 - `POST /api/v1/playback/actions`：暂停、继续、上一首、下一首或停止。
 - `GET /api/v1/playback/events`：SSE 播放状态。
-- `POST /api/v1/generated-playlists/{playlistId}/save-to-provider`：明确请求保存正式平台歌单。
+- `POST /api/v1/generated-playlists/{playlistId}/exports`：导出可恢复的 JSON、CSV 或 M3U 清单；不写入 QQ 音乐账号。
 
 队列命令必须包含 `playlistId`、`snapshotHash`、`stopAfterLast=true` 和按顺序排列的 `sourceTrackId`。包含非喜欢歌曲时必须带 `source=external` 和用户明确加入的审计事件。
 
@@ -143,7 +145,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 - `POST /api/v1/external-discovery-jobs`：按搜索会话、候选集合或歌曲创建任务。
 - `GET /api/v1/external-discovery-jobs/{jobId}`：读取校验通过的建议。
-- `POST /api/v1/external-suggestions/{suggestionId}/actions`：试听、打开、加入喜欢、手动入队或不感兴趣。
+- `POST /api/v1/external-suggestions/{suggestionId}/actions`：试听、在 QQ 音乐中打开、手动入队或不感兴趣；“加入喜欢”由用户在 QQ 音乐页面执行。
 
 未校验结果只用于内部诊断，不在普通响应中返回。
 
@@ -158,6 +160,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `search.stageChanged`
 - `search.completed`
 - `connector.statusChanged`
+- `qqmusic.authenticationChanged`
 - `playback.stateChanged`
 
 示例：
@@ -190,20 +193,16 @@ data: {"jobId":"...","completed":420,"total":1087,"failed":3}
 
 - `connector.hello`：扩展版本、浏览器、页面适配器版本和能力。
 - `connector.heartbeat`：活跃页面和连接状态。
-- `library.syncRequested` / `library.syncPage` / `library.syncCompleted`。
 - `catalog.searchRequested` / `catalog.searchCompleted`。
 - `playback.queueRequested` / `playback.queueAccepted` / `playback.queueRejected`。
 - `playback.actionRequested` / `playback.stateChanged`。
-- `playlist.saveRequested` / `playlist.saveCompleted`。
 
 ### 能力名称
 
-- `library.read`
 - `catalog.search`
 - `queue.play`
 - `playback.control`
 - `playback.state`
-- `playlist.save`
 
 能力未声明时，API 不得下发相应命令。
 

@@ -23,7 +23,8 @@
 
 - [系统设计](architecture/SYSTEM_DESIGN.md)：运行组件、数据流、通信方式和失败隔离。
 - [ADR 001 独立应用形态](architecture/ADR-001-independent-product.md)：为何从原生 QQ 音乐 Mod 转为独立应用。
-- [ADR 002 QQ 音乐网页版连接器](architecture/ADR-002-qqmusic-web-connector.md)：为何优先使用浏览器扩展连接网页播放器。
+- [ADR 002 QQ 音乐网页版播放连接器](architecture/ADR-002-qqmusic-web-connector.md)：为何使用浏览器扩展控制网页播放器。
+- [ADR 003 手动 Cookie 音乐库同步](architecture/ADR-003-manual-cookie-library-sync.md)：为何首版由本机后端保管 Cookie 并只读同步“我喜欢”。
 
 ## 数据与接口
 
