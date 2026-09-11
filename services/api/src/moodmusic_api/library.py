@@ -4,7 +4,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from .database import Database
@@ -64,21 +64,46 @@ class LibraryService:
                 skippedMissingId=snapshot.skipped_missing_id,
             )
 
-    async def list_liked_songs(self, *, page: int, page_size: int) -> LibrarySongPage:
+    async def list_liked_songs(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        query: str | None = None,
+    ) -> LibrarySongPage:
         try:
             async with self._database.session_factory() as session:
                 membership_filter = (
                     LibraryMembership.library == LIKED_LIBRARY,
                     LibraryMembership.active.is_(True),
                 )
+                search_filter = ()
+                normalized_query = query.strip() if query else ""
+                if normalized_query:
+                    escaped_query = (
+                        normalized_query.replace("\\", "\\\\")
+                        .replace("%", "\\%")
+                        .replace("_", "\\_")
+                    )
+                    pattern = f"%{escaped_query}%"
+                    search_filter = (
+                        or_(
+                            Song.title.ilike(pattern, escape="\\"),
+                            Song.album.ilike(pattern, escape="\\"),
+                            cast(Song.artists, String).ilike(pattern, escape="\\"),
+                        ),
+                    )
                 total = await session.scalar(
-                    select(func.count()).select_from(LibraryMembership).where(*membership_filter)
+                    select(func.count())
+                    .select_from(LibraryMembership)
+                    .join(Song, LibraryMembership.song_id == Song.id)
+                    .where(*membership_filter, *search_filter)
                 )
                 rows = (
                     await session.execute(
                         select(Song, LibraryMembership)
                         .join(LibraryMembership, LibraryMembership.song_id == Song.id)
-                        .where(*membership_filter)
+                        .where(*membership_filter, *search_filter)
                         .order_by(Song.title, Song.source_track_id)
                         .offset(page * page_size)
                         .limit(page_size)

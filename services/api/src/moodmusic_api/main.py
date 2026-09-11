@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from .credentials import (
@@ -68,6 +70,18 @@ def create_app() -> FastAPI:
         title="MoodMusic API",
         version="0.1.0",
         description="Local-only API for MoodMusic",
+    )
+    configured_origins = os.environ.get(
+        "WEB_ORIGIN",
+        "http://127.0.0.1:5173,http://localhost:5173",
+    )
+    allowed_origins = [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Content-Type"],
     )
 
     @app.get("/api/v1/health")
@@ -226,9 +240,14 @@ def create_app() -> FastAPI:
         library: Annotated[LibraryService, Depends(get_library_service)],
         page: Annotated[int, Query(ge=0)] = 0,
         page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 50,
+        query: Annotated[str | None, Query(alias="q", max_length=100)] = None,
     ) -> LibrarySongPage:
         try:
-            return await library.list_liked_songs(page=page, page_size=page_size)
+            return await library.list_liked_songs(
+                page=page,
+                page_size=page_size,
+                query=query,
+            )
         except LibraryDatabaseError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

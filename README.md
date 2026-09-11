@@ -4,7 +4,7 @@ MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不�
 
 本仓库采用“独立 Web 应用 + 本机 QQ 音乐数据适配器 + QQ 音乐网页版播放连接器”的产品形态。MoodMusic 后端使用用户手动粘贴并由 Windows 安全存储保护的 QQ 音乐 Cookie，只读同步当前账号的“我喜欢”；浏览器扩展负责把确认队列交给 QQ 音乐网页版播放。项目不修改 QQ 音乐安装文件，不下载或转发受保护音频，也不绕过会员、地区、版权或 DRM 限制。
 
-> 当前状态：QQ 音乐音乐库纵向切片已通过真实账号验证，可以安全保存/清除 Cookie、验证登录、自动读取全部分页、去重并增量同步到本机 PostgreSQL + pgvector。前端、歌曲画像、自然语言筛选和播放连接器仍待开发。MoodMusic 是暂定产品名，可以通过架构决策记录统一更名。
+> 当前状态：QQ 音乐音乐库纵向切片已通过真实账号验证，可以安全保存/清除 Cookie、验证登录、自动读取全部分页、去重并增量同步到本机 PostgreSQL + pgvector。Next.js 曲库工作台已可浏览、分页、搜索并一键同步；歌曲画像、自然语言筛选和播放连接器仍待开发。MoodMusic 是暂定产品名，可以通过架构决策记录统一更名。
 
 ## 产品要解决的问题
 
@@ -145,6 +145,16 @@ python -m alembic upgrade head
 $env:MOODMUSIC_DATA_DIR = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) '..\..\data'))
 python -m uvicorn moodmusic_api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+另开一个 PowerShell 窗口启动 Web 界面：
+
+```powershell
+Set-Location apps\web
+npm install
+npm run dev
+```
+
+浏览器打开 `http://localhost:5173` 即可查看、搜索和同步本地曲库。
 
 浏览器打开 `http://127.0.0.1:8000/docs`，按顺序执行：
 

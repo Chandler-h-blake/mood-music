@@ -57,7 +57,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 - `POST /api/v1/library/imports`：创建手动或连接器导入批次。
 - `GET /api/v1/library/imports/{importId}`：读取统计、游标和错误。
-- `GET /api/v1/library/songs`：分页读取喜欢歌曲与画像状态。
+- `GET /api/v1/library/songs`：分页读取喜欢歌曲与画像状态；支持可选 `q` 参数按歌曲名、歌手或专辑搜索。
 - `GET /api/v1/library/songs/{songId}`：读取歌曲、当前画像和人工覆盖。
 - `PATCH /api/v1/library/songs/{songId}/overrides`：修改并锁定画像字段。
 - `POST /api/v1/library/sync`：顺序读取 QQ 音乐“我喜欢”全部分页并原子更新本地数据库；当前阶段等待同步完成后返回 `200`，后台任务化后再升级为 `202`。凭据只由服务端凭据代理读取。
