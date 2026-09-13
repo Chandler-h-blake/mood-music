@@ -75,3 +75,26 @@ def test_pc_com_probe_is_read_only_and_fail_closed() -> None:
     assert "serverWasRunning = $serverWasRunning" in runner
     assert "Stop-Process -Id $serverProcess.Id" in runner
     assert "Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\WOW6432Node" in runner
+
+
+def test_windows_media_session_probe_is_read_only() -> None:
+    runner = (ROOT / "scripts" / "probe-windows-media-sessions.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+    worker = (
+        ROOT / "scripts" / "probe-windows-media-sessions-worker.ps1"
+    ).read_text(encoding="utf-8-sig")
+
+    for query in [
+        "GetSessions",
+        "GetPlaybackInfo",
+        "GetTimelineProperties",
+        "TryGetMediaPropertiesAsync",
+    ]:
+        assert query in worker
+    for control in ["TryPlayAsync", "TryPauseAsync", "TrySkipNextAsync"]:
+        assert control not in worker
+
+    assert "WaitForExit($TimeoutSeconds * 1000)" in runner
+    assert "-WindowStyle Hidden" in runner
+    assert 'status = "queryFailed"' in runner

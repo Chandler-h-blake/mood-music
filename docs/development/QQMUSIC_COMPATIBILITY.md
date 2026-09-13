@@ -63,4 +63,11 @@
 - x86 只读探测器可以激活 `QQMusicSvr.QQMusicPlayer`，`GetCurrentPlaySongID`、`GetPlayItemCount`、`EnumPlayItemIDs` 三项调用本身均返回成功。
 - 在现代 QQ 音乐客户端正在播放时，只有 `QQMusic.exe` 运行，没有客户端启动的 `QQMusicSvr.exe`。探测器临时启动的独立服务仍返回当前歌曲 ID、队列数量和枚举数量全为 0。
 - 结论：该 COM 服务与当前 22.41 播放器脱节，不进入写入测试。探测器将这种情况标记为 `standaloneReadOnly`，不得声明播放就绪。
-- Chrome 实际播放开发继续暂停；PC 路线下一步验证 Windows 系统媒体会话，精确歌曲定位与队列构造仍无已通过方案。
+- Chrome 实际播放开发继续暂停；PC 路线的 Windows 系统媒体会话只读验证已通过，精确歌曲定位与队列构造仍无已通过方案。
+
+## 2026-09-13 Windows 系统媒体会话验证
+
+- 在 QQ 音乐 PC 正在播放时，系统媒体会话识别到来源 `QQMusic.exe` 和真实 `Playing` 状态。
+- 成功读取歌曲标题、歌手、专辑、当前进度与总时长。
+- 会话声明支持暂停、上一首和下一首；播放中 `canPlay=false`、`canPause=true` 符合当前状态。
+- 本次只读探测没有调用控制方法。系统媒体会话不提供目录搜索或精确队列写入能力，因此只通过了 `playback.state` 可行性，其他能力仍需逐项验证。
