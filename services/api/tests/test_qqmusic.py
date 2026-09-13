@@ -36,6 +36,51 @@ async def test_resolve_numeric_song_ids_batches_mids() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_numeric_song_ids_respects_qqmusic_fifty_song_limit() -> None:
+    mids = [f"{index:014d}" for index in range(76)]
+    batches: list[list[str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        batch = request.url.params["songmid"].split(",")
+        batches.append(batch)
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": [
+                    {"mid": mid, "id": int(mid) + 1}
+                    for mid in batch
+                ],
+            },
+        )
+
+    client = QQMusicClient(transport=httpx.MockTransport(handler))
+
+    result = await client.resolve_numeric_song_ids(mids)
+
+    assert [len(batch) for batch in batches] == [50, 26]
+    assert len(result) == 76
+
+
+@pytest.mark.asyncio
+async def test_resolve_numeric_song_ids_keeps_old_mid_when_qqmusic_canonicalizes_it() -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": [{"mid": "0025sxHg4J8XEn", "id": 276964034}],
+            },
+        )
+
+    client = QQMusicClient(transport=httpx.MockTransport(handler))
+
+    result = await client.resolve_numeric_song_ids(["003UWh7a3V5Xhv"])
+
+    assert result == {"003UWh7a3V5Xhv": 276964034}
+
+
+@pytest.mark.asyncio
 async def test_resolve_numeric_song_ids_rejects_non_qqmusic_mid() -> None:
     client = QQMusicClient(transport=httpx.MockTransport(lambda _: httpx.Response(500)))
 

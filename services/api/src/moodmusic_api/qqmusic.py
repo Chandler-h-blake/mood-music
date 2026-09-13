@@ -19,6 +19,7 @@ QQMUSIC_SONG_DETAIL_URL = "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fc
 DEFAULT_PAGE_SIZE = 30
 SYNC_PAGE_SIZE = 100
 MAX_SYNC_PAGES = 200
+SONG_DETAIL_BATCH_SIZE = 50
 
 
 class QQMusicRequestError(RuntimeError):
@@ -83,8 +84,8 @@ class QQMusicClient:
                 transport=self._transport,
                 follow_redirects=False,
             ) as client:
-                for offset in range(0, len(source_track_ids), 80):
-                    batch = source_track_ids[offset : offset + 80]
+                for offset in range(0, len(source_track_ids), SONG_DETAIL_BATCH_SIZE):
+                    batch = source_track_ids[offset : offset + SONG_DETAIL_BATCH_SIZE]
                     response = await client.get(
                         QQMUSIC_SONG_DETAIL_URL,
                         params={"songmid": ",".join(batch), "format": "json"},
@@ -95,13 +96,16 @@ class QQMusicClient:
                     data = body.get("data") if isinstance(body, Mapping) else None
                     if not isinstance(data, list):
                         raise QQMusicRequestError("QQ 音乐歌曲信息接口返回结构已经变化。")
-                    for item in data:
+                    if len(data) != len(batch):
+                        raise QQMusicRequestError("QQ 音乐没有返回完整的歌曲编号。")
+                    for requested_mid, item in zip(batch, data, strict=True):
                         if not isinstance(item, Mapping):
                             continue
-                        mid = item.get("mid")
                         numeric_id = item.get("id")
-                        if isinstance(mid, str) and isinstance(numeric_id, int) and numeric_id > 0:
-                            resolved[mid] = numeric_id
+                        if isinstance(numeric_id, int) and numeric_id > 0:
+                            # QQ Music can canonicalize an old mid in the response. The
+                            # endpoint preserves request order, so retain the caller's mid.
+                            resolved[requested_mid] = numeric_id
         except httpx.TimeoutException as exc:
             raise QQMusicRequestError("查询 QQ 音乐歌曲编号超时，请稍后重试。") from exc
         except httpx.HTTPStatusError as exc:
