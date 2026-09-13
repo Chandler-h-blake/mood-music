@@ -25,6 +25,7 @@
 - [ADR 001 独立应用形态](architecture/ADR-001-independent-product.md)：为何从原生 QQ 音乐 Mod 转为独立应用。
 - [ADR 002 QQ 音乐网页版播放连接器](architecture/ADR-002-qqmusic-web-connector.md)：为何使用浏览器扩展控制网页播放器。
 - [ADR 003 手动 Cookie 音乐库同步](architecture/ADR-003-manual-cookie-library-sync.md)：为何首版由本机后端保管 Cookie 并只读同步“我喜欢”。
+- [ADR 004 双播放连接器路线](architecture/ADR-004-dual-qqmusic-playback-connectors.md)：Chrome 网页连接器与 Windows PC 连接器如何共享协议及安全边界。
 
 ## 数据与接口
 
@@ -41,4 +42,4 @@
 
 ## 历史参考
 
-上级目录中的 `QQ音乐AI选歌插件_产品与技术实施计划书.docx` 记录了最初的固定版本原生 Mod 方案。该文件只作为历史产品输入保留，不属于当前 Git 仓库，也不再控制当前系统架构。仍适用的业务规则已经迁移到当前 PRD；架构变化由 ADR 001 和 ADR 002 明确记录。
+上级目录中的 `QQ音乐AI选歌插件_产品与技术实施计划书.docx` 记录了最初的固定版本原生 Mod 方案。该文件只作为历史产品输入保留，不属于当前 Git 仓库，也不再控制当前系统架构。仍适用的业务规则已经迁移到当前 PRD；架构变化由 ADR 001、ADR 002 和 ADR 004 明确记录。

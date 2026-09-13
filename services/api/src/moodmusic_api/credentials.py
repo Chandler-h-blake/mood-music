@@ -10,7 +10,8 @@ from typing import Protocol
 
 MAX_COOKIE_LENGTH = 16_384
 CRYPTPROTECT_UI_FORBIDDEN = 0x1
-DPAPI_ENTROPY = b"MoodMusic:v1:qqmusic-cookie"
+QQMUSIC_DPAPI_ENTROPY = b"MoodMusic:v1:qqmusic-cookie"
+DEEPSEEK_DPAPI_ENTROPY = b"MoodMusic:v1:deepseek-api-key"
 
 
 class CredentialStoreError(RuntimeError):
@@ -84,14 +85,14 @@ def _as_blob(data: bytes) -> tuple[_DataBlob, ctypes.Array[ctypes.c_char]]:
     return _DataBlob(len(data), pointer), buffer
 
 
-def _protect(data: bytes) -> bytes:
+def _protect(data: bytes, entropy: bytes = QQMUSIC_DPAPI_ENTROPY) -> bytes:
     if os.name != "nt":
         raise CredentialStoreError("DPAPI 凭据存储只支持 Windows。")
 
     crypt32 = ctypes.WinDLL("Crypt32.dll", use_last_error=True)
     kernel32 = ctypes.WinDLL("Kernel32.dll", use_last_error=True)
     input_blob, input_buffer = _as_blob(data)
-    entropy_blob, entropy_buffer = _as_blob(DPAPI_ENTROPY)
+    entropy_blob, entropy_buffer = _as_blob(entropy)
     output_blob = _DataBlob()
     _ = input_buffer, entropy_buffer
 
@@ -113,14 +114,14 @@ def _protect(data: bytes) -> bytes:
         kernel32.LocalFree(output_blob.pbData)
 
 
-def _unprotect(data: bytes) -> bytes:
+def _unprotect(data: bytes, entropy: bytes = QQMUSIC_DPAPI_ENTROPY) -> bytes:
     if os.name != "nt":
         raise CredentialStoreError("DPAPI 凭据存储只支持 Windows。")
 
     crypt32 = ctypes.WinDLL("Crypt32.dll", use_last_error=True)
     kernel32 = ctypes.WinDLL("Kernel32.dll", use_last_error=True)
     input_blob, input_buffer = _as_blob(data)
-    entropy_blob, entropy_buffer = _as_blob(DPAPI_ENTROPY)
+    entropy_blob, entropy_buffer = _as_blob(entropy)
     output_blob = _DataBlob()
     _ = input_buffer, entropy_buffer
 
@@ -193,4 +194,47 @@ class WindowsCredentialStore:
             return False
         except OSError as exc:
             raise CredentialStoreError("无法删除 DPAPI 加密的 QQ 音乐 Cookie。") from exc
+        return True
+
+
+class ModelCredentialStore:
+    """Stores the DeepSeek API key in a separate current-user DPAPI envelope."""
+
+    def __init__(self, base_directory: Path | None = None) -> None:
+        directory = base_directory or _default_credential_directory()
+        self.credential_path = directory / "deepseek-api-key.dpapi"
+
+    def set_deepseek_api_key(self, api_key: str) -> None:
+        normalized = api_key.strip()
+        if not normalized or len(normalized) > 512 or "\r" in normalized or "\n" in normalized:
+            raise InvalidCookieError("API Key 格式无效。")
+        encrypted = _protect(normalized.encode("utf-8"), DEEPSEEK_DPAPI_ENTROPY)
+        temporary_path = self.credential_path.with_suffix(".dpapi.tmp")
+        try:
+            self.credential_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path.write_bytes(encrypted)
+            os.replace(temporary_path, self.credential_path)
+        except OSError as exc:
+            raise CredentialStoreError("无法保存 DPAPI 加密的模型 API Key。") from exc
+        finally:
+            temporary_path.unlink(missing_ok=True)
+
+    def get_deepseek_api_key(self) -> str | None:
+        if not self.credential_path.exists():
+            return None
+        try:
+            encrypted = self.credential_path.read_bytes()
+            return _unprotect(encrypted, DEEPSEEK_DPAPI_ENTROPY).decode("utf-8")
+        except CredentialStoreError:
+            raise
+        except (OSError, UnicodeError) as exc:
+            raise CredentialStoreError("无法读取 DPAPI 加密的模型 API Key。") from exc
+
+    def delete_deepseek_api_key(self) -> bool:
+        try:
+            self.credential_path.unlink()
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise CredentialStoreError("无法删除 DPAPI 加密的模型 API Key。") from exc
         return True

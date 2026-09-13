@@ -6,6 +6,8 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 首期 HTTP 前缀为 `/api/v1`。所有 JSON 字段使用 `camelCase`，数据库与 Python 内部可以使用 `snake_case`，但转换必须集中在 schema 层。
 
+本文同时记录当前实现和目标契约。未特别标注的条目属于目标契约；截至 2026-09-13，已实现范围为健康检查、QQ 音乐与 DeepSeek 凭据、曲库预览/同步/查询、画像任务创建/查询/重试、自然语言搜索、会话追加要求、三种排序、候选删除/拖动/找相似，以及临时队列历史/恢复。版本、通用设置修改、导入批次、单曲画像覆盖、暂停/取消/SSE、播放连接器、外部发现和队列导出仍是计划接口。
+
 ## 2 通用约定
 
 ### 请求头
@@ -51,6 +53,8 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 `provider=qqmusic-cookie` 时，`PUT` 请求接收用户主动粘贴的 Cookie，`POST /api/v1/providers/qqmusic-cookie/test` 验证 QQ 音乐登录状态，`DELETE` 清除本机 Cookie。Cookie 与模型密钥使用独立凭据名称。
 
+`provider=deepseek` 时，`PUT` 保存独立的 DeepSeek API Key，`POST /api/v1/providers/deepseek/test` 同时验证凭据与结构化意图输出。Embedding 由本地 BGE-M3 提供，不接收云端密钥。
+
 凭据写入响应只返回凭据引用 ID、`configured`、验证状态、可确定的过期时间和掩码信息，永远不返回原值。Cookie 请求体不得进入访问日志或错误监控。
 
 ### 音乐库
@@ -87,6 +91,8 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 ### 画像任务
 
+当前实现以 `incremental` 为默认模式，按环境变量 `PROFILE_BATCH_SIZE` 分批持久化；每个成功批次更新 checkpoint。`rebuild` 会追加画像版本，不原地覆盖旧版本。当前进程内执行器支持失败后重试，暂停、取消、SSE 与进程启动时自动恢复留在后续任务生命周期迭代。
+
 - `POST /api/v1/profile-jobs`：创建初始化或增量画像任务。
 - `GET /api/v1/jobs/{jobId}`：读取状态、进度和失败分类。
 - `POST /api/v1/jobs/{jobId}/pause`：请求在安全 checkpoint 暂停。
@@ -99,6 +105,8 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 ### 搜索会话
 
+当前实现使用结构化意图、同一 Embedding 模型空间中的原始非负余弦相似度与可用连续特征进行均衡评分，并对明确的悲伤、紧张、能量上限、排除流派、人声模式、演唱语言和纯音乐许可执行硬边界。自由文本画像标签会先在本地归一化为稳定代码，例如 `mixed_duet`、`instrumental`、`zh` 与 `en`，无需重新画像。只有用户原文明确表达的情绪或能量边界才会成为硬约束。均衡模式门槛不低于 0.75。所有当前喜欢且画像可用的歌曲均被评估并留下候选审计记录；响应不做固定 Top-K 截断。
+
 - `POST /api/v1/search-sessions`：创建自然语言搜索。
 - `GET /api/v1/search-sessions/{sessionId}`：读取意图、状态和候选集合。
 - `GET /api/v1/search-sessions/{sessionId}/events`：SSE 搜索进度。
@@ -106,6 +114,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `DELETE /api/v1/search-sessions/{sessionId}/candidates/{candidateId}`：从当前会话删除候选。
 - `PATCH /api/v1/search-sessions/{sessionId}/candidate-order`：保存拖动结果。
 - `POST /api/v1/search-sessions/{sessionId}/sorts`：对同一候选集合执行排序。
+- `POST /api/v1/search-sessions/{sessionId}/candidates/{candidateId}/similar`：保持候选集合不变，以指定歌曲为基准重排。
 
 创建搜索示例：
 
@@ -138,6 +147,8 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 - `POST /api/v1/generated-playlists`：从搜索会话保存临时队列快照。
 - `GET /api/v1/generated-playlists/{playlistId}`：读取快照、排序和保存状态。
+- `GET /api/v1/generated-playlists`：分页读取队列快照历史。
+- `POST /api/v1/generated-playlists/{playlistId}/restore`：把历史候选集合与顺序恢复为新的可编辑快照。
 - `POST /api/v1/playback/queues`：校验后提交给连接器。
 - `POST /api/v1/playback/actions`：暂停、继续、上一首、下一首或停止。
 - `GET /api/v1/playback/events`：SSE 播放状态。
@@ -177,9 +188,9 @@ data: {"jobId":"...","completed":420,"total":1087,"failed":3}
 
 客户端断线重连时发送 `Last-Event-ID`。服务端保留足以恢复当前任务的事件游标，但数据库实体状态始终是真实来源。
 
-## 5 连接器 WebSocket 协议
+## 5 连接器本机协议
 
-连接地址只绑定本机，例如 `ws://127.0.0.1:{port}/connector/v1`。第一次连接使用短时配对代码，成功后换取可撤销令牌。
+连接地址只绑定本机，例如 `ws://127.0.0.1:{port}/connector/v1`。Chrome 扩展使用 WebSocket；PC 本地助手可以使用同一 WebSocket 或具有相同消息 schema 的受限本机传输。第一次连接使用短时配对代码，成功后换取可撤销令牌。
 
 ### 消息信封
 
@@ -195,7 +206,7 @@ data: {"jobId":"...","completed":420,"total":1087,"failed":3}
 
 ### 核心消息
 
-- `connector.hello`：扩展版本、浏览器、页面适配器版本和能力。
+- `connector.hello`：连接器类型、连接器版本、目标应用版本、适配器版本和能力。
 - `connector.heartbeat`：活跃页面和连接状态。
 - `catalog.searchRequested` / `catalog.searchCompleted`。
 - `playback.queueRequested` / `playback.queueAccepted` / `playback.queueRejected`。

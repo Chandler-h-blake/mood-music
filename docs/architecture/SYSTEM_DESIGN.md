@@ -2,7 +2,7 @@
 
 ## 1 架构结论
 
-MoodMusic 采用模块化单体、QQ 音乐数据适配器与浏览器播放扩展组合。Next.js Web、FastAPI API、后台任务和 PostgreSQL 构成可独立运行的核心系统；数据适配器隔离 QQ 音乐只读内部接口，播放扩展通过版本化本机协议接入，两者的第三方细节都不得渗透到搜索、画像或播放列表领域。
+MoodMusic 采用模块化单体、QQ 音乐数据适配器与可替换播放连接器组合。Next.js Web、FastAPI API、后台任务和 PostgreSQL 构成可独立运行的核心系统；数据适配器隔离 QQ 音乐只读内部接口，Chrome 扩展与通过可行性验证后的 Windows PC 助手通过同一版本化本机协议接入，第三方细节不得渗透到搜索、画像或播放列表领域。
 
 首期保持单机、单用户和本地优先。模型请求仍调用用户选择的云端提供方，但 QQ 音乐 Cookie、歌曲成员关系、历史、画像和密钥控制留在本机。Cookie 和模型 API Key 进入操作系统凭据存储，不进入业务数据库或模型请求。系统规模以一千至数千首歌曲为主，优先选择正确性、可恢复性和可审计性。
 
@@ -24,6 +24,8 @@ flowchart TB
     Bridge["本机连接器网关"]
     Extension["Manifest V3 扩展"]
     QQ["QQ 音乐网页版"]
+    PCAgent["Windows PC 连接器"]
+    QQPC["QQ 音乐 PC 客户端"]
 
     User --> Web
     User --> QQ
@@ -42,6 +44,8 @@ flowchart TB
     API <--> Bridge
     Bridge <-->|"配对 WebSocket"| Extension
     Extension <--> QQ
+    Bridge <-->|"配对本机协议"| PCAgent
+    PCAgent <-->|"UI Automation / 系统媒体能力"| QQPC
 ```
 
 主要数据流：
@@ -50,8 +54,8 @@ flowchart TB
 2. `QQMusicLibraryProvider` 使用该凭据分页读取“我喜欢”，规范化身份并持久化喜欢成员关系，再创建增量画像任务。
 3. 任务执行器调用模型生成经过 schema 校验的字段和向量。
 4. 搜索请求写入会话，API 计算全量得分并对边界候选调用模型复核。
-5. 用户确认队列后，API 再次检查喜欢成员关系，把版本化命令发送给扩展。
-6. 播放扩展驱动网页播放器并回传状态；核心业务不读取 Cookie，数据适配器不接触音频流。
+5. 用户确认队列并选择连接器后，API 再次检查喜欢成员关系，把版本化命令发送给对应适配器。
+6. Chrome 扩展驱动网页播放器，或 PC 助手在能力允许时操作桌面客户端，并回传状态；核心业务不读取 Cookie，数据适配器与连接器都不接触音频流。
 
 ## 3 逻辑模块
 
@@ -96,7 +100,7 @@ Web 不直接调用模型、访问数据库或持有服务端密钥。业务状�
 
 ### 3.5 QQ 音乐播放连接器
 
-扩展是播放反腐层：QQ 页面上的 DOM、按钮和状态被翻译成稳定的内部契约。核心服务只认识 `ExternalSongRef`、`ConnectorCapability`、`PlaybackCommand` 和 `PlaybackEvent`，不认识 CSS selector。扩展不承担首版音乐库同步，也不导出浏览器 Cookie。
+连接器是播放反腐层：QQ 网页上的 DOM 或 PC 客户端的可访问性控件与系统媒体状态被翻译成稳定的内部契约。核心服务只认识 `ExternalSongRef`、`ConnectorCapability`、`PlaybackCommand` 和 `PlaybackEvent`，不认识 CSS selector、窗口句柄或控件定位器。连接器不承担音乐库同步，也不导出浏览器 Cookie、客户端登录态或播放地址。Chrome 扩展优先实现；PC 助手必须先通过 ADR 004 的可行性门槛。
 
 ## 4 搜索与匹配算法
 
@@ -157,12 +161,12 @@ Web 不直接调用模型、访问数据库或持有服务端密钥。业务状�
 - 同步任务保存分页游标、导入批次和错误类别，不保存包含登录态的原始请求或响应。
 - 遇到未登录或凭据失效时停止任务，保留已有曲库并要求用户更新 Cookie。
 
-### 5.3 API 到播放扩展
+### 5.3 API 到播放连接器
 
 - 网关只监听 `127.0.0.1`，端口可配置。
 - 首次配对由 Web 显示短时一次性代码，扩展换取可撤销令牌。
 - 消息包含 `protocolVersion`、`type`、`requestId`、`sentAt` 和 `payload`。
-- 扩展连接后先发送能力清单；API 只下发当前连接器声明支持的命令。
+- 连接器连接后先发送类型、目标版本和能力清单；API 只下发当前连接器声明支持的命令。
 - 播放队列命令包含队列快照 ID 和内容哈希，重复提交不应重复启动。
 
 ## 6 一致性与恢复
@@ -186,6 +190,8 @@ Windows 本机
 ├─ Next.js 开发或生产进程
 ├─ FastAPI API
 ├─ 后台 worker
+├─ 可选 QQ 音乐 PC 连接器本地助手
+├─ QQ 音乐 PC 客户端
 ├─ Windows 凭据存储中的 QQ 音乐 Cookie 与模型 API Key
 └─ PostgreSQL 和 pgvector 容器
 ```

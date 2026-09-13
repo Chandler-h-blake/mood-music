@@ -3,27 +3,53 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
+from .ai_client import (
+    DeepSeekModelClient,
+    LocalEmbeddingClient,
+    ModelConfigurationError,
+    ModelRequestError,
+)
 from .credentials import (
     CredentialStore,
     CredentialStoreError,
     InvalidCookieError,
+    ModelCredentialStore,
     WindowsCredentialStore,
 )
 from .database import Database
 from .library import LibraryDatabaseError, LibraryService, LibrarySyncInProgressError
 from .models import (
+    CandidateOrderUpdate,
     CredentialStatus,
+    JobStatus,
     LibrarySongPage,
     LibrarySyncResult,
     LikedPagePreview,
+    ModelApiKeyInput,
+    ModelSettings,
+    PlaylistHistoryPage,
+    ProfileJobCreate,
     QQMusicCookieInput,
+    QueueSortCreate,
+    SearchRefinementCreate,
+    SearchSessionCreate,
+    TemporaryQueue,
 )
+from .profiles import ProfileJobConflictError, ProfileJobNotFoundError, ProfileService
 from .qqmusic import QQMusicAuthenticationError, QQMusicClient, QQMusicRequestError
+from .semantic_search import (
+    CandidateNotFoundError,
+    CandidateSetMismatchError,
+    NoProfilesError,
+    SearchSessionNotFoundError,
+    SemanticSearchService,
+)
 
 
 @lru_cache
@@ -37,6 +63,21 @@ def get_qqmusic_client() -> QQMusicClient:
 
 
 @lru_cache
+def get_model_credential_store() -> ModelCredentialStore:
+    return ModelCredentialStore()
+
+
+@lru_cache
+def get_model_client() -> DeepSeekModelClient:
+    return DeepSeekModelClient()
+
+
+@lru_cache
+def get_embedding_client() -> LocalEmbeddingClient:
+    return LocalEmbeddingClient()
+
+
+@lru_cache
 def get_database() -> Database:
     return Database()
 
@@ -44,6 +85,32 @@ def get_database() -> Database:
 @lru_cache
 def get_library_service() -> LibraryService:
     return LibraryService(get_database())
+
+
+@lru_cache
+def get_profile_service() -> ProfileService:
+    return ProfileService(get_database(), get_model_client(), get_embedding_client())
+
+
+@lru_cache
+def get_semantic_search_service() -> SemanticSearchService:
+    return SemanticSearchService(get_database(), get_model_client(), get_embedding_client())
+
+
+def require_model_api_key(store: ModelCredentialStore) -> str:
+    try:
+        api_key = store.get_deepseek_api_key()
+    except CredentialStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "credentials.unavailable", "message": str(exc)},
+        ) from exc
+    if api_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "model.apiKeyMissing", "message": "请先设置 DeepSeek API Key。"},
+        )
+    return api_key
 
 
 def require_cookie(store: CredentialStore) -> str:
@@ -80,13 +147,91 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
 
     @app.get("/api/v1/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": "moodmusic-api"}
+
+
+    @app.get("/api/v1/settings", response_model=ModelSettings)
+    async def settings_view(
+        store: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+        model: Annotated[DeepSeekModelClient, Depends(get_model_client)],
+        embedding: Annotated[LocalEmbeddingClient, Depends(get_embedding_client)],
+    ) -> ModelSettings:
+        try:
+            configured = store.get_deepseek_api_key() is not None
+        except CredentialStoreError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "credentials.unavailable", "message": str(exc)},
+            ) from exc
+        return ModelSettings(
+            chatProvider="deepseek",
+            chatModel=model.chat_model,
+            embeddingProvider="local",
+            embeddingModel=embedding.embedding_model,
+            embeddingDimensions=embedding.embedding_dimensions,
+            apiKeyConfigured=configured,
+        )
+
+    @app.put("/api/v1/credentials/deepseek", response_model=CredentialStatus)
+    async def set_deepseek_key(
+        payload: ModelApiKeyInput,
+        store: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+    ) -> CredentialStatus:
+        try:
+            store.set_deepseek_api_key(payload.apiKey.get_secret_value())
+        except InvalidCookieError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": "model.apiKeyInvalid", "message": str(exc)},
+            ) from exc
+        except CredentialStoreError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "credentials.unavailable", "message": str(exc)},
+            ) from exc
+        return CredentialStatus(
+            configured=True,
+            valid=None,
+            message="DeepSeek API Key 已保存到本机 DPAPI 加密凭据存储。",
+        )
+
+    @app.delete("/api/v1/credentials/deepseek", response_model=CredentialStatus)
+    async def delete_deepseek_key(
+        store: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+    ) -> CredentialStatus:
+        try:
+            deleted = store.delete_deepseek_api_key()
+        except CredentialStoreError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "credentials.unavailable", "message": str(exc)},
+            ) from exc
+        return CredentialStatus(
+            configured=False,
+            valid=None,
+            message="DeepSeek API Key 已清除。" if deleted else "当前没有已保存的 API Key。",
+        )
+
+    @app.post("/api/v1/providers/deepseek/test", response_model=CredentialStatus)
+    async def test_deepseek(
+        store: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+        model: Annotated[DeepSeekModelClient, Depends(get_model_client)],
+    ) -> CredentialStatus:
+        api_key = require_model_api_key(store)
+        try:
+            await model.test_connection(api_key)
+        except (ModelRequestError, ModelConfigurationError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"code": "model.requestFailed", "message": str(exc)},
+            ) from exc
+        return CredentialStatus(configured=True, valid=True, message="DeepSeek 模型连接有效。")
 
     @app.get("/api/v1/health/ready")
     async def readiness(
@@ -254,7 +399,317 @@ def create_app() -> FastAPI:
                 detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
 
+    @app.post(
+        "/api/v1/profile-jobs",
+        response_model=JobStatus,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def create_profile_job(
+        payload: ProfileJobCreate,
+        background_tasks: BackgroundTasks,
+        credentials: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+        profiles: Annotated[ProfileService, Depends(get_profile_service)],
+    ) -> JobStatus:
+        api_key = require_model_api_key(credentials)
+        try:
+            result = await profiles.create_job(payload.mode)
+        except ProfileJobConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "job.alreadyRunning", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+        if result.status == "queued":
+            background_tasks.add_task(
+                profiles.run_job,
+                result.jobId,
+                lambda: api_key,
+            )
+        return result
+
+    @app.get("/api/v1/jobs/{job_id}", response_model=JobStatus)
+    async def get_job(
+        job_id: str,
+        profiles: Annotated[ProfileService, Depends(get_profile_service)],
+    ) -> JobStatus:
+        try:
+            return await profiles.get_job(_parse_uuid(job_id))
+        except ProfileJobNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "job.notFound", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.post("/api/v1/jobs/{job_id}/retry", response_model=JobStatus)
+    async def retry_job(
+        job_id: str,
+        background_tasks: BackgroundTasks,
+        credentials: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+        profiles: Annotated[ProfileService, Depends(get_profile_service)],
+    ) -> JobStatus:
+        api_key = require_model_api_key(credentials)
+        try:
+            result = await profiles.retry_job(_parse_uuid(job_id))
+        except ProfileJobNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "job.notFound", "message": str(exc)},
+            ) from exc
+        except ProfileJobConflictError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "job.invalidState", "message": str(exc)},
+            ) from exc
+        background_tasks.add_task(
+            profiles.run_job,
+            result.jobId,
+            lambda: api_key,
+        )
+        return result
+
+    @app.post("/api/v1/search-sessions", response_model=TemporaryQueue)
+    async def create_search_session(
+        payload: SearchSessionCreate,
+        credentials: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        api_key = require_model_api_key(credentials)
+        try:
+            return await search_service.create_queue(api_key, payload.description)
+        except NoProfilesError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "profiles.notReady", "message": str(exc)},
+            ) from exc
+        except ModelRequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"code": "model.requestFailed", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.get("/api/v1/search-sessions/{session_id}", response_model=TemporaryQueue)
+    async def get_search_session(
+        session_id: str,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        try:
+            result = await search_service.get_session_queue(_parse_uuid(session_id))
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "search.notFound", "message": "搜索会话不存在。"},
+            )
+        return result
+
+    @app.post(
+        "/api/v1/search-sessions/{session_id}/refinements", response_model=TemporaryQueue
+    )
+    async def refine_search_session(
+        session_id: str,
+        payload: SearchRefinementCreate,
+        credentials: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        api_key = require_model_api_key(credentials)
+        try:
+            return await search_service.refine_queue(
+                api_key, _parse_uuid(session_id), payload.requirement
+            )
+        except SearchSessionNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "search.notFound", "message": str(exc)},
+            ) from exc
+        except (ModelRequestError, NoProfilesError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "search.refinementFailed", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.post("/api/v1/search-sessions/{session_id}/sorts", response_model=TemporaryQueue)
+    async def sort_search_session(
+        session_id: str,
+        payload: QueueSortCreate,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        try:
+            return await search_service.sort_queue(_parse_uuid(session_id), payload)
+        except SearchSessionNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "search.notFound", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.delete(
+        "/api/v1/search-sessions/{session_id}/candidates/{candidate_id}",
+        response_model=TemporaryQueue,
+    )
+    async def remove_search_candidate(
+        session_id: str,
+        candidate_id: str,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        try:
+            return await search_service.remove_candidate(
+                _parse_uuid(session_id), _parse_uuid(candidate_id)
+            )
+        except CandidateNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "candidate.notFound", "message": str(exc)},
+            ) from exc
+        except (SearchSessionNotFoundError, LibraryDatabaseError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "queue.updateFailed", "message": str(exc)},
+            ) from exc
+
+    @app.patch(
+        "/api/v1/search-sessions/{session_id}/candidate-order",
+        response_model=TemporaryQueue,
+    )
+    async def update_candidate_order(
+        session_id: str,
+        payload: CandidateOrderUpdate,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        try:
+            return await search_service.save_candidate_order(
+                _parse_uuid(session_id), payload.candidateIds
+            )
+        except CandidateSetMismatchError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "candidate.setChanged", "message": str(exc)},
+            ) from exc
+        except (SearchSessionNotFoundError, LibraryDatabaseError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "queue.updateFailed", "message": str(exc)},
+            ) from exc
+
+    @app.post(
+        "/api/v1/search-sessions/{session_id}/candidates/{candidate_id}/similar",
+        response_model=TemporaryQueue,
+    )
+    async def find_similar_candidates(
+        session_id: str,
+        candidate_id: str,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        try:
+            return await search_service.find_similar(
+                _parse_uuid(session_id), _parse_uuid(candidate_id)
+            )
+        except CandidateNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "candidate.notFound", "message": str(exc)},
+            ) from exc
+        except (SearchSessionNotFoundError, LibraryDatabaseError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "queue.updateFailed", "message": str(exc)},
+            ) from exc
+
+    @app.get("/api/v1/generated-playlists", response_model=PlaylistHistoryPage)
+    async def list_generated_playlists(
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+        page: Annotated[int, Query(ge=0)] = 0,
+        page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
+    ) -> PlaylistHistoryPage:
+        try:
+            return await search_service.list_history(page=page, page_size=page_size)
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.post(
+        "/api/v1/generated-playlists/{playlist_id}/restore", response_model=TemporaryQueue
+    )
+    async def restore_generated_playlist(
+        playlist_id: str,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        try:
+            return await search_service.restore_playlist(_parse_uuid(playlist_id))
+        except SearchSessionNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "playlist.notFound", "message": str(exc)},
+            ) from exc
+        except CandidateSetMismatchError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "playlist.cannotRestore", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.get("/api/v1/generated-playlists/{playlist_id}", response_model=TemporaryQueue)
+    async def get_generated_playlist(
+        playlist_id: str,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+    ) -> TemporaryQueue:
+        try:
+            result = await search_service.get_playlist(_parse_uuid(playlist_id))
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "playlist.notFound", "message": "临时播放队列不存在。"},
+            )
+        return result
+
     return app
 
 
 app = create_app()
+
+
+def _parse_uuid(value: str) -> UUID:
+    try:
+        return UUID(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "request.invalidId", "message": "资源 ID 格式无效。"},
+        ) from exc
