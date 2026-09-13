@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MoodMusic 连接器</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">MOODMUSIC</p>
+      <h1>QQ 音乐网页连接器</h1>
+      <p id="summary">等待检测</p>
+      <dl>
+        <div><dt>本机 API</dt><dd id="api">未知</dd></div>
+        <div><dt>QQ 页面</dt><dd id="target">未知</dd></div>
+        <div><dt>协议</dt><dd id="protocol">1.0</dd></div>
+      </dl>
+      <button id="probe" type="button">检测当前 QQ 音乐页面</button>
+      <p class="hint">本阶段只检测能力，不会点击页面、读取 Cookie 或开始播放。</p>
+      <pre id="details" hidden></pre>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

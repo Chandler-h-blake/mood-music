@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "MoodMusic QQ 音乐连接器",
+  "version": "0.1.0",
+  "description": "检测 QQ 音乐网页能力，并与本机 MoodMusic API 协商播放协议。",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "https://y.qq.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "MoodMusic 连接器",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://y.qq.com/*"],
+      "js": ["content-adapter.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
