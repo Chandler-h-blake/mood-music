@@ -45,7 +45,7 @@
 - 当前同步是一个等待完成后返回的本机请求；同步任务的后台化与断点恢复尚未实现。
 - Next.js 已提供 DeepSeek API Key 的本机设置入口；QQ 音乐 Cookie 目前仍主要通过本机 Swagger 设置，统一设置页尚未完成。
 - Chrome 网页连接器已完成只读能力探测骨架，但实际播放开发暂时暂停，代码作为备用路线保留。
-- QQ 音乐 PC 客户端的 UI Automation 语义控件和遗留 COM 路线均已判定不适用于当前 22.41；Windows 系统媒体会话仍待验证。
+- QQ 音乐 PC 客户端的 UI Automation 语义控件和遗留 COM 路线均已判定不适用于当前 22.41；当前使用客户端命令入口与 Windows 系统媒体会话组合控制。
 
 ## 2026-09-13 双连接器探测骨架
 
@@ -74,3 +74,12 @@
 - 系统媒体会话不提供目录搜索或精确队列写入能力，`catalog.search` 与 `queue.play` 仍需其他适配方式。
 - FastAPI 已提供 `GET /api/v1/playback/state` 和 `POST /api/v1/playback/actions`，实机通过纯 HTTP 调用完成状态读取及“暂停 → 继续”往返验证。
 - PC 正式路线不采用截图识别、OCR、屏幕坐标点击或模拟键盘搜索；这些方式不能验证歌曲身份和队列一致性。
+
+## 2026-09-13 PC 精确点播验证
+
+- 对已安装 QQ 音乐 22.41 做只读静态检查，确认 `QQMusic.exe` 接受 `/playbysongid` 及 `cmd_count`、`id_N`、`songtype_N` 参数。
+- 使用真实数字歌曲 ID 实机点播后，系统媒体会话回读到预期标题和 `Playing` 状态。
+- 本地曲库保存的是 14 位 song mid；QQ 音乐歌曲信息接口支持逗号分隔批量查询，可得到数字 `id`，后端按每批 80 首解析并要求全部映射成功。
+- FastAPI 的 `POST /api/v1/playback/queues` 已用真实 29 首临时队列验证：准确启动第 1 首；随后 `POST /api/v1/playback/actions` 的 `next` 准确切到第 2 首。
+- 一次把两个 ID 交给 `/playbysongid` 未能可靠替换客户端原队列的下一首，因此当前由后端保存队列位置并在用户触发前后切歌时逐首点播，不声明客户端原生整队列能力。
+- 尚未实现自然播放结束监视、自动续播和最后一首停止；这些仍是 M5 的剩余工作。

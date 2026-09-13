@@ -6,7 +6,7 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 首期 HTTP 前缀为 `/api/v1`。所有 JSON 字段使用 `camelCase`，数据库与 Python 内部可以使用 `snake_case`，但转换必须集中在 schema 层。
 
-本文同时记录当前实现和目标契约。未特别标注的条目属于目标契约；截至 2026-09-13，已实现范围为健康检查、QQ 音乐与 DeepSeek 凭据、曲库预览/同步/查询、画像任务创建/查询/重试、自然语言搜索、会话追加要求、三种排序、候选删除/拖动/找相似、临时队列历史/恢复、连接器协议描述与 HTTP 能力协商，以及 PC QQ 音乐的 Windows 媒体状态和基础控制 HTTP API。PC 遗留 COM 实机已证明未接通现代客户端。版本、通用设置修改、导入批次、单曲画像覆盖、暂停/取消/SSE、连接器实时传输、精确队列播放、外部发现和队列导出仍是计划接口。
+本文同时记录当前实现和目标契约。未特别标注的条目属于目标契约；截至 2026-09-13，已实现范围为健康检查、QQ 音乐与 DeepSeek 凭据、曲库预览/同步/查询、画像任务创建/查询/重试、自然语言搜索、会话追加要求、三种排序、候选删除/拖动/找相似、临时队列历史/恢复、连接器协议描述与 HTTP 能力协商，以及 PC QQ 音乐的状态、基础控制、精确启动队列第一首和后端顺序前后切歌。PC 遗留 COM 实机已证明未接通现代客户端。版本、通用设置修改、导入批次、单曲画像覆盖、暂停/取消/SSE、自动续播与末曲停止、连接器实时传输、外部发现和队列导出仍是计划接口。
 
 ## 2 通用约定
 
@@ -149,15 +149,15 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 - `GET /api/v1/generated-playlists/{playlistId}`：读取快照、排序和保存状态。
 - `GET /api/v1/generated-playlists`：分页读取队列快照历史。
 - `POST /api/v1/generated-playlists/{playlistId}/restore`：把历史候选集合与顺序恢复为新的可编辑快照。
-- `POST /api/v1/playback/queues`：校验后提交给连接器；尚未实现，因为 QQ 音乐 22.41 未发现可验证的精确队列 API。
+- `POST /api/v1/playback/queues`：接收 `playlistId`，读取已持久化快照，把 song mid 映射为客户端数字 ID，精确启动第一首并在后端保存队列顺序；已实现。
 - `GET /api/v1/playback/state`：通过 Windows 系统媒体 API 读取 QQ 音乐当前状态、歌曲、进度和基础能力；已实现。
-- `POST /api/v1/playback/actions`：通过 Windows 系统媒体 API 执行 `play`、`pause`、`next` 或 `previous`；已实现并区分“已观察到完成”与“仅被系统接收”。
+- `POST /api/v1/playback/actions`：`play`、`pause` 使用 Windows 系统媒体 API；存在活动 MoodMusic 队列时，`next`、`previous` 按后端队列精确点播，否则回退到系统媒体控制。已实现并区分“已观察到完成”与“仅被系统接收”。
 - `GET /api/v1/playback/events`：SSE 播放状态。
 - `POST /api/v1/generated-playlists/{playlistId}/exports`：导出可恢复的 JSON、CSV 或 M3U 清单；不写入 QQ 音乐账号。
 
-队列命令必须包含 `playlistId`、`snapshotHash`、`stopAfterLast=true` 和按顺序排列的 `sourceTrackId`。包含非喜欢歌曲时必须带 `source=external` 和用户明确加入的审计事件。
+当前 HTTP 请求只接收 `playlistId`，`snapshotHash` 和按顺序排列的 `sourceTrackId` 从不可变的数据库快照读取，避免前端篡改队列内容。未来外部歌曲进入队列时必须带 `source=external` 和用户明确加入的审计事件。
 
-当前 PC HTTP API 不通过截图、OCR、坐标点击或键盘输入操纵 QQ 音乐。Windows 系统媒体 API 不提供目录搜索和精确队列写入，因此 `playback/queues` 在找到可验证接口前保持不可用。
+当前 PC HTTP API 不通过截图、OCR、坐标点击或键盘输入操纵 QQ 音乐。它使用 QQ 音乐 22.41 自身的 `/playbysongid` 命令精确点播，并以 Windows 系统媒体 API 回读确认。该入口没有公开稳定性保证，因此客户端升级后必须重新验证。客户端原生整队列写入尚未证明可靠，当前由后端维护顺序；自动续播和最后一首停止尚未实现。
 
 ### 外部发现
 

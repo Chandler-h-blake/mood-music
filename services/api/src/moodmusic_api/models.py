@@ -260,3 +260,19 @@ class PCPlaybackActionResult(BaseModel):
     title: str | None = None
     artist: str | None = None
     message: str
+
+
+class PCPlaybackQueueInput(BaseModel):
+    playlistId: UUID
+
+
+class PCPlaybackQueueResult(BaseModel):
+    status: Literal["completed", "acceptedUnconfirmed"]
+    playlistId: UUID
+    acceptedCount: int = Field(ge=0)
+    currentIndex: int = Field(ge=0)
+    sourceTrackId: str
+    title: str
+    artist: str | None = None
+    observed: bool
+    message: str

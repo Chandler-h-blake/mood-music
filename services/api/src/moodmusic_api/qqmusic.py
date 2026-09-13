@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from math import ceil
@@ -14,6 +15,7 @@ from .credentials import ParsedCookie, parse_cookie_header
 from .models import ArtistPreview, LikedPagePreview, SongPreview
 
 QQMUSIC_API_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg"
+QQMUSIC_SONG_DETAIL_URL = "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg"
 DEFAULT_PAGE_SIZE = 30
 SYNC_PAGE_SIZE = 100
 MAX_SYNC_PAGES = 200
@@ -51,6 +53,65 @@ class QQMusicClient:
     ) -> None:
         self._timeout = httpx.Timeout(timeout_seconds)
         self._transport = transport
+
+    async def resolve_numeric_song_ids(
+        self, source_track_ids: list[str]
+    ) -> dict[str, int]:
+        """Resolve public QQ Music song mids to the numeric IDs used by the PC client."""
+        if not source_track_ids:
+            return {}
+        invalid = [
+            value
+            for value in source_track_ids
+            if not re.fullmatch(r"[A-Za-z0-9]{14}", value)
+        ]
+        if invalid:
+            raise QQMusicRequestError("临时队列包含 QQ 音乐无法识别的歌曲标识。")
+
+        resolved: dict[str, int] = {}
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://y.qq.com/",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
+            ),
+        }
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout,
+                transport=self._transport,
+                follow_redirects=False,
+            ) as client:
+                for offset in range(0, len(source_track_ids), 80):
+                    batch = source_track_ids[offset : offset + 80]
+                    response = await client.get(
+                        QQMUSIC_SONG_DETAIL_URL,
+                        params={"songmid": ",".join(batch), "format": "json"},
+                        headers=headers,
+                    )
+                    response.raise_for_status()
+                    body = response.json()
+                    data = body.get("data") if isinstance(body, Mapping) else None
+                    if not isinstance(data, list):
+                        raise QQMusicRequestError("QQ 音乐歌曲信息接口返回结构已经变化。")
+                    for item in data:
+                        if not isinstance(item, Mapping):
+                            continue
+                        mid = item.get("mid")
+                        numeric_id = item.get("id")
+                        if isinstance(mid, str) and isinstance(numeric_id, int) and numeric_id > 0:
+                            resolved[mid] = numeric_id
+        except httpx.TimeoutException as exc:
+            raise QQMusicRequestError("查询 QQ 音乐歌曲编号超时，请稍后重试。") from exc
+        except httpx.HTTPStatusError as exc:
+            raise QQMusicRequestError("QQ 音乐歌曲信息接口暂时无法响应。") from exc
+        except (httpx.RequestError, ValueError) as exc:
+            raise QQMusicRequestError("无法解析 QQ 音乐歌曲信息。") from exc
+
+        if len(resolved) != len(set(source_track_ids)):
+            raise QQMusicRequestError("队列中有歌曲无法映射到 QQ 音乐 PC 客户端。")
+        return resolved
 
     async def fetch_all_liked_songs(
         self,

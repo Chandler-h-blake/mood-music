@@ -42,6 +42,8 @@ from .models import (
     ModelSettings,
     PCPlaybackActionInput,
     PCPlaybackActionResult,
+    PCPlaybackQueueInput,
+    PCPlaybackQueueResult,
     PCPlaybackState,
     PlaylistHistoryPage,
     ProfileJobCreate,
@@ -53,6 +55,7 @@ from .models import (
 )
 from .profiles import ProfileJobConflictError, ProfileJobNotFoundError, ProfileService
 from .qqmusic import QQMusicAuthenticationError, QQMusicClient, QQMusicRequestError
+from .qqmusic_pc import QQMusicPCError, QQMusicPCService
 from .semantic_search import (
     CandidateNotFoundError,
     CandidateSetMismatchError,
@@ -96,6 +99,11 @@ def get_database() -> Database:
 @lru_cache
 def get_windows_media_service() -> WindowsMediaService:
     return WindowsMediaService()
+
+
+@lru_cache
+def get_qqmusic_pc_service() -> QQMusicPCService:
+    return QQMusicPCService(get_qqmusic_client(), get_windows_media_service())
 
 
 @lru_cache
@@ -202,11 +210,11 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/playback/actions", response_model=PCPlaybackActionResult)
     async def control_playback(
         payload: PCPlaybackActionInput,
-        media: Annotated[WindowsMediaService, Depends(get_windows_media_service)],
+        pc: Annotated[QQMusicPCService, Depends(get_qqmusic_pc_service)],
     ) -> PCPlaybackActionResult:
         try:
-            return await media.control(payload.action)
-        except WindowsMediaError as exc:
+            return await pc.control(payload.action)
+        except (QQMusicPCError, WindowsMediaError) as exc:
             raise HTTPException(
                 status_code=503,
                 detail={"code": "playback.controlFailed", "message": str(exc)},
@@ -755,6 +763,33 @@ def create_app() -> FastAPI:
                 detail={"code": "playlist.notFound", "message": "临时播放队列不存在。"},
             )
         return result
+
+    @app.post("/api/v1/playback/queues", response_model=PCPlaybackQueueResult)
+    async def start_playback_queue(
+        payload: PCPlaybackQueueInput,
+        search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
+        pc: Annotated[QQMusicPCService, Depends(get_qqmusic_pc_service)],
+    ) -> PCPlaybackQueueResult:
+        try:
+            queue = await search_service.get_playlist(payload.playlistId)
+            if queue is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={"code": "playlist.notFound", "message": "临时播放队列不存在。"},
+                )
+            return await pc.start_queue(queue)
+        except HTTPException:
+            raise
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
+        except QQMusicPCError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "playback.queueFailed", "message": str(exc)},
+            ) from exc
 
     return app
 

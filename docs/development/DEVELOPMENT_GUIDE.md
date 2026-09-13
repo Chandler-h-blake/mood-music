@@ -2,7 +2,7 @@
 
 ## 1 开发目标
 
-本指南规定如何在不破坏产品、数据和安全边界的前提下持续开发 MoodMusic。当前仓库已经包含可运行的 Next.js Web、FastAPI API、PostgreSQL/pgvector 曲库、DeepSeek 画像、本地 BGE-M3 向量、自然语言选歌和临时队列链路；播放连接器与外部发现仍在后续阶段。经过本机验证的启动命令以仓库 README 为准。
+本指南规定如何在不破坏产品、数据和安全边界的前提下持续开发 MoodMusic。当前仓库已经包含可运行的 Next.js Web、FastAPI API、PostgreSQL/pgvector 曲库、DeepSeek 画像、本地 BGE-M3 向量、自然语言选歌、临时队列和 QQ 音乐 PC 精确启动/人工切歌链路；自动续播与外部发现仍在后续阶段。经过本机验证的启动命令以仓库 README 为准。
 
 ## 2 前置工具策略
 

@@ -129,6 +129,6 @@ class WindowsMediaService:
 
     @staticmethod
     def _seconds_to_ms(value: object) -> int | None:
-        if not isinstance(value, (int, float)):
+        if not isinstance(value, int | float):
             return None
         return max(0, round(value * 1000))

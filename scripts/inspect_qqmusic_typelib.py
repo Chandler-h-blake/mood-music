@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
+import uuid
 import winreg
 from ctypes import wintypes
 from pathlib import Path
@@ -12,6 +13,109 @@ TYPELIB_REGISTRY_KEY = (
     r"SOFTWARE\Classes\WOW6432Node\TypeLib"
     r"\{C4549B07-549D-46C4-AAF6-49CC54B99F69}\1.0\0\win32"
 )
+
+
+class GUID(ctypes.Structure):
+    _fields_ = [
+        ("data1", wintypes.DWORD),
+        ("data2", wintypes.WORD),
+        ("data3", wintypes.WORD),
+        ("data4", ctypes.c_ubyte * 8),
+    ]
+
+
+class TYPEATTR_HEADER(ctypes.Structure):
+    _fields_ = [
+        ("guid", GUID),
+        ("lcid", wintypes.DWORD),
+        ("reserved", wintypes.DWORD),
+        ("constructor", wintypes.LONG),
+        ("destructor", wintypes.LONG),
+        ("schema", ctypes.c_void_p),
+        ("instance_size", wintypes.ULONG),
+        ("type_kind", ctypes.c_int),
+        ("function_count", wintypes.WORD),
+        ("variable_count", wintypes.WORD),
+        ("implemented_type_count", wintypes.WORD),
+        ("vtable_size", wintypes.WORD),
+    ]
+
+
+TYPE_KIND_NAMES = {
+    0: "enum",
+    1: "record",
+    2: "module",
+    3: "interface",
+    4: "dispatch",
+    5: "coclass",
+    6: "alias",
+    7: "union",
+}
+
+
+class TYPEDESC(ctypes.Structure):
+    pass
+
+
+class TYPEDESC_VALUE(ctypes.Union):
+    _fields_ = [
+        ("nested", ctypes.POINTER(TYPEDESC)),
+        ("reference", wintypes.DWORD),
+    ]
+
+
+TYPEDESC._fields_ = [("value", TYPEDESC_VALUE), ("variant_type", wintypes.WORD)]
+
+
+class PARAMDESC(ctypes.Structure):
+    _fields_ = [("extended", ctypes.c_void_p), ("flags", wintypes.WORD)]
+
+
+class ELEMDESC(ctypes.Structure):
+    _fields_ = [("type", TYPEDESC), ("parameter", PARAMDESC)]
+
+
+class FUNCDESC(ctypes.Structure):
+    _fields_ = [
+        ("member_id", wintypes.LONG),
+        ("status_codes", ctypes.c_void_p),
+        ("parameters", ctypes.POINTER(ELEMDESC)),
+        ("function_kind", ctypes.c_int),
+        ("invoke_kind", ctypes.c_int),
+        ("calling_convention", ctypes.c_int),
+        ("parameter_count", ctypes.c_short),
+        ("optional_parameter_count", ctypes.c_short),
+        ("vtable_offset", ctypes.c_short),
+        ("status_code_count", ctypes.c_short),
+        ("return_value", ELEMDESC),
+        ("flags", wintypes.WORD),
+    ]
+
+
+VARIANT_TYPE_NAMES = {
+    0: "void",
+    2: "int16",
+    3: "int32",
+    8: "bstr",
+    11: "bool",
+    12: "variant",
+    13: "iunknown",
+    19: "uint32",
+    20: "int64",
+    21: "uint64",
+    22: "int",
+    23: "uint",
+    24: "void",
+    25: "hresult",
+    26: "pointer",
+}
+
+
+def _type_description(description: TYPEDESC) -> str:
+    variant_type = int(description.variant_type)
+    if variant_type == 26 and description.value.nested:
+        return f"pointer<{_type_description(description.value.nested.contents)}>"
+    return VARIANT_TYPE_NAMES.get(variant_type, f"variantType:{variant_type}")
 
 
 def _registered_typelib_path() -> Path:
@@ -89,8 +193,62 @@ def _member_names(type_info: ctypes.c_void_p, member_id: int) -> list[str]:
     return [name for index in range(count.value) if (name := _take_bstr(values[index]))]
 
 
+def _type_identity(type_info: ctypes.c_void_p) -> tuple[str, int, int]:
+    descriptor = ctypes.c_void_p()
+    get_type_attr = _method(
+        type_info, 3, wintypes.LONG, ctypes.POINTER(ctypes.c_void_p)
+    )
+    if get_type_attr(type_info, ctypes.byref(descriptor)) != 0:
+        raise RuntimeError("ITypeInfo.GetTypeAttr failed")
+    try:
+        header = ctypes.cast(descriptor, ctypes.POINTER(TYPEATTR_HEADER)).contents
+        guid = uuid.UUID(bytes_le=bytes(header.guid))
+        return str(guid), header.type_kind, header.implemented_type_count
+    finally:
+        _method(type_info, 19, None, ctypes.c_void_p)(type_info, descriptor)
+
+
+def _implemented_types(type_info: ctypes.c_void_p, count: int) -> list[dict]:
+    get_reference = _method(
+        type_info,
+        8,
+        wintypes.LONG,
+        wintypes.UINT,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    get_reference_info = _method(
+        type_info,
+        14,
+        wintypes.LONG,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+    )
+    references = []
+    for index in range(count):
+        reference = wintypes.DWORD()
+        if get_reference(type_info, index, ctypes.byref(reference)) != 0:
+            continue
+        reference_info = ctypes.c_void_p()
+        if get_reference_info(type_info, reference, ctypes.byref(reference_info)) != 0:
+            continue
+        try:
+            name, _ = _documentation(reference_info, -1)
+            guid, type_kind, _ = _type_identity(reference_info)
+            references.append(
+                {
+                    "name": name,
+                    "guid": guid,
+                    "typeKind": TYPE_KIND_NAMES.get(type_kind, str(type_kind)),
+                }
+            )
+        finally:
+            _method(reference_info, 2, wintypes.ULONG)(reference_info)
+    return references
+
+
 def inspect_type_info(type_info: ctypes.c_void_p) -> dict:
     interface_name, _ = _documentation(type_info, -1)
+    guid, type_kind, implemented_type_count = _type_identity(type_info)
     get_func_desc = _method(
         type_info,
         5,
@@ -106,25 +264,50 @@ def inspect_type_info(type_info: ctypes.c_void_p) -> dict:
         if result != 0:
             break
         try:
-            member_id = ctypes.cast(descriptor, ctypes.POINTER(wintypes.LONG)).contents.value
+            function = ctypes.cast(descriptor, ctypes.POINTER(FUNCDESC)).contents
+            member_id = function.member_id
             names = _member_names(type_info, member_id)
             name, description = _documentation(type_info, member_id)
+            parameter_types = [
+                {
+                    "type": _type_description(function.parameters[item].type),
+                    "flags": int(function.parameters[item].parameter.flags),
+                }
+                for item in range(function.parameter_count)
+            ]
             members.append(
                 {
                     "memberId": member_id,
                     "name": name or (names[0] if names else None),
                     "parameters": names[1:] if len(names) > 1 else [],
+                    "parameterTypes": parameter_types,
+                    "returnType": _type_description(function.return_value.type),
+                    "vtableOffset": function.vtable_offset,
+                    "callingConvention": function.calling_convention,
                     "description": description,
                 }
             )
         finally:
             release_func_desc(type_info, descriptor)
-    return {"name": interface_name, "members": members}
+    return {
+        "name": interface_name,
+        "guid": guid,
+        "typeKind": TYPE_KIND_NAMES.get(type_kind, str(type_kind)),
+        "implementedTypes": _implemented_types(type_info, implemented_type_count),
+        "members": members,
+    }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Inspect the registered QQMusic type library")
+    parser = argparse.ArgumentParser(description="Inspect a QQ Music type library")
     parser.add_argument("path", nargs="?", type=Path)
+    parser.add_argument("--name", action="append", dest="names")
+    parser.add_argument(
+        "--member",
+        action="append",
+        dest="members",
+        help="Only include types exposing a member with this exact name",
+    )
     arguments = parser.parse_args()
     typelib_path = arguments.path or _registered_typelib_path()
     if not typelib_path.is_file():
@@ -155,14 +338,24 @@ def main() -> None:
                 continue
             try:
                 inspected = inspect_type_info(type_info)
-                if inspected["name"] and inspected["members"]:
+                member_names = {
+                    member["name"] for member in inspected["members"] if member["name"]
+                }
+                if (
+                    inspected["name"]
+                    and (not arguments.names or inspected["name"] in arguments.names)
+                    and (
+                        not arguments.members
+                        or any(member in member_names for member in arguments.members)
+                    )
+                ):
                     interfaces.append(inspected)
             finally:
                 _method(type_info, 2, wintypes.ULONG)(type_info)
         print(
             json.dumps(
                 {
-                    "typeLibrary": "QQMusicSvr 1.0",
+                    "typeLibrary": typelib_path.stem,
                     "source": str(typelib_path),
                     "interfaces": interfaces,
                 },

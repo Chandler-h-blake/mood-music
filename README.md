@@ -4,7 +4,7 @@ MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不�
 
 本仓库采用“独立 Web 应用 + 本机 QQ 音乐数据适配器 + 可替换播放连接器”的产品形态。MoodMusic 后端使用用户手动粘贴并由 Windows 安全存储保护的 QQ 音乐 Cookie，只读同步当前账号的“我喜欢”；当前优先把临时队列交给 Windows QQ 音乐客户端，Chrome 网页扩展暂停开发并保留为备用适配器。项目不修改或注入 QQ 音乐安装文件，不下载或转发受保护音频，也不绕过会员、地区、版权或 DRM 限制。
 
-> 当前状态（2026-09-13）：QQ 音乐曲库、DeepSeek 多角度画像、BGE-M3 语义选歌、三种排序、候选编辑和历史回放均已可用。两种播放器已共用版本化连接器协议；实机验证表明 QQ 音乐 22.41 的 UI Automation 控件树不可用，注册的 `QQMusicSvr 1.0` COM 服务也与现代客户端播放脱节。Windows 系统媒体会话已经通过真实歌曲/状态读取以及播放、暂停、上一首、下一首控制验证；下一步解决安全歌曲定位与精确队列。Chrome 实际播放暂停，外部推荐仍待开发。
+> 当前状态（2026-09-13）：QQ 音乐曲库、DeepSeek 多角度画像、BGE-M3 语义选歌、三种排序、候选编辑和历史回放均已可用。PC 连接器已能从网页经 FastAPI 精确启动临时队列第一首，并按后端队列处理用户触发的上一首和下一首；播放状态与暂停/继续由 Windows 系统媒体 API 提供。下一步补齐自然结束自动续播和最后一首停止。Chrome 实际播放暂停，外部推荐仍待开发。
 
 ## 产品要解决的问题
 
@@ -59,7 +59,7 @@ MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不�
 | AI | 可配置聊天模型与 Embedding 模型 | 结构化建档、意图理解、向量检索与边界复核 |
 | QQ 音乐数据适配器 | Python、HTTP 客户端、Windows 凭据存储/DPAPI | 验证本机 Cookie、只读同步“我喜欢”、隔离私有接口变化 |
 | QQ 音乐网页连接器 | TypeScript、Chrome Extension Manifest V3 | 备用适配器；当前保留探测和公共协议，暂停实际播放开发 |
-| QQ 音乐 PC 连接器 | Windows 本地助手、系统媒体能力、待验证的歌曲定位适配 | 在不修改或注入客户端的前提下控制桌面播放器；按版本逐项验证能力 |
+| QQ 音乐 PC 连接器 | FastAPI、客户端命令入口、Windows 系统媒体能力 | 精确启动歌曲并维护临时队列顺序；待补自动续播和末曲停止 |
 | 后台任务 | 首期数据库任务表；达到触发条件后引入 Redis 与 Celery | 初始化、增量画像、重试和断点恢复 |
 | 测试 | pytest、Vitest、Playwright | 单元、集成、合约和端到端测试 |
 | 交付 | Docker Compose、GitHub Actions | 本地依赖、持续集成和可重复构建 |
@@ -173,6 +173,8 @@ npm run dev
 8. `POST /api/v1/profile-jobs`：用 DeepSeek 建立画像并用本地 BGE-M3 生成向量；通过 `GET /api/v1/jobs/{jobId}` 查看 checkpoint 进度。
 9. `POST /api/v1/search-sessions`：理解自然语言感觉，全量评分并返回已持久化的临时队列。
 10. `GET /api/v1/generated-playlists/{playlistId}`：重新读取临时队列快照。
+11. `POST /api/v1/playback/queues`：把快照交给本机 QQ 音乐并精确启动第一首；网页“临时队列”页已提供按钮。
+12. `POST /api/v1/playback/actions`：播放、暂停，或按当前 MoodMusic 队列切换上一首/下一首。
 
 `GET /api/v1/health` 检查 API 进程，`GET /api/v1/health/ready` 同时验证 PostgreSQL。Docker 数据保存在命名卷 `moodmusic_moodmusic-postgres-data`；普通 `docker compose down` 不会删除它。
 

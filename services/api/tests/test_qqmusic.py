@@ -9,6 +9,41 @@ from moodmusic_api.qqmusic import QQMusicClient, QQMusicRequestError
 
 
 @pytest.mark.asyncio
+async def test_resolve_numeric_song_ids_batches_mids() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["songmid"] == "003ekipq2vkaTF,002nYCor10GXh2"
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": [
+                    {"mid": "003ekipq2vkaTF", "id": 252745135},
+                    {"mid": "002nYCor10GXh2", "id": 472845496},
+                ],
+            },
+        )
+
+    client = QQMusicClient(transport=httpx.MockTransport(handler))
+
+    result = await client.resolve_numeric_song_ids(
+        ["003ekipq2vkaTF", "002nYCor10GXh2"]
+    )
+
+    assert result == {
+        "003ekipq2vkaTF": 252745135,
+        "002nYCor10GXh2": 472845496,
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_numeric_song_ids_rejects_non_qqmusic_mid() -> None:
+    client = QQMusicClient(transport=httpx.MockTransport(lambda _: httpx.Response(500)))
+
+    with pytest.raises(QQMusicRequestError, match="歌曲标识"):
+        await client.resolve_numeric_song_ids(["metadata-sha256:unsafe"])
+
+
+@pytest.mark.asyncio
 async def test_fetch_liked_page_maps_qqmusic_response_without_exposing_cookie() -> None:
     captured_request: httpx.Request | None = None
 
