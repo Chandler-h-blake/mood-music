@@ -71,5 +71,7 @@ def test_pc_com_probe_is_read_only_and_fail_closed() -> None:
 
     assert "WaitForExit($TimeoutSeconds * 1000)" in runner
     assert "$serverProcess = $null" in runner
+    assert '"standaloneReadOnly"' in runner
+    assert "serverWasRunning = $serverWasRunning" in runner
     assert "Stop-Process -Id $serverProcess.Id" in runner
     assert "Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\WOW6432Node" in runner

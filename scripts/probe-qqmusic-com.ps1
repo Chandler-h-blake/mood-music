@@ -33,8 +33,9 @@ if ($LASTEXITCODE -ne 0) {
 $existingServerIds = @(
     Get-Process -Name QQMusicSvr -ErrorAction SilentlyContinue | ForEach-Object { $_.Id }
 )
+$serverWasRunning = $existingServerIds.Count -gt 0
 $serverProcess = $null
-if ($existingServerIds.Count -eq 0) {
+if (-not $serverWasRunning) {
     $serverProcess = Start-Process -FilePath $serverPath -ArgumentList "-Embedding" `
         -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 2
@@ -64,13 +65,23 @@ try {
     $output = Get-Content -LiteralPath $standardOutput -Raw -ErrorAction SilentlyContinue
     $errorOutput = Get-Content -LiteralPath $standardError -Raw -ErrorAction SilentlyContinue
     if ($output) {
-        $ready = $probeProcess.ExitCode -eq 0
+        $queriesReady = $probeProcess.ExitCode -eq 0
+        $integrated = $queriesReady -and $serverWasRunning
         [PSCustomObject]@{
-            status = if ($ready) { "readOnlyReady" } else { "partialReadOnly" }
+            status = if ($integrated) {
+                "readOnlyReady"
+            } elseif ($queriesReady) {
+                "standaloneReadOnly"
+            } else {
+                "partialReadOnly"
+            }
             protocol = "QQMusicSvr 1.0"
+            serverWasRunning = $serverWasRunning
             result = $output.Trim() | ConvertFrom-Json
-            message = if ($ready) {
+            message = if ($integrated) {
                 "QQ 音乐 COM 只读查询成功；没有执行播放或队列修改。"
+            } elseif ($queriesReady) {
+                "只读查询成功，但 COM 服务由探测器临时启动，不能证明它与当前 QQ 音乐客户端联动。"
             } else {
                 "QQ 音乐 COM 已激活，但部分只读查询的参数签名仍需校准。"
             }

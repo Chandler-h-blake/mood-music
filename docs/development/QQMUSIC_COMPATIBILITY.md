@@ -45,7 +45,7 @@
 - 当前同步是一个等待完成后返回的本机请求；同步任务的后台化与断点恢复尚未实现。
 - Next.js 已提供 DeepSeek API Key 的本机设置入口；QQ 音乐 Cookie 目前仍主要通过本机 Swagger 设置，统一设置页尚未完成。
 - Chrome 网页连接器已完成只读能力探测骨架，但实际播放开发暂时暂停，代码作为备用路线保留。
-- QQ 音乐 PC 客户端的 UI Automation 语义控件路线已判定不适用于当前 22.41；COM 只读能力已通过，精确队列写入仍待验证。
+- QQ 音乐 PC 客户端的 UI Automation 语义控件和遗留 COM 路线均已判定不适用于当前 22.41；Windows 系统媒体会话仍待验证。
 
 ## 2026-09-13 双连接器探测骨架
 
@@ -60,6 +60,7 @@
 
 - QQ 音乐 22.41 安装程序注册了 32 位 `QQMusicSvr 1.0` COM 类型库和本机服务 `QQMusicSvr.exe`。
 - 类型库检查发现当前歌曲、队列枚举、队列修改、播放控制和事件相关成员；这些是本机客户端暴露的接口，但没有可依赖的个人开发者稳定文档。
-- x86 只读探测器成功激活 `QQMusicSvr.QQMusicPlayer`，`GetCurrentPlaySongID`、`GetPlayItemCount`、`EnumPlayItemIDs` 三项均返回成功。
-- 验证时服务侧队列为空，因此当前歌曲 ID、队列数量和枚举数量均为 0；这代表空状态，不代表调用失败。
-- 实际加歌、排序、开始播放和事件回传尚未执行。Chrome 实际播放开发暂停，PC COM 成为 M5 当前主路线。
+- x86 只读探测器可以激活 `QQMusicSvr.QQMusicPlayer`，`GetCurrentPlaySongID`、`GetPlayItemCount`、`EnumPlayItemIDs` 三项调用本身均返回成功。
+- 在现代 QQ 音乐客户端正在播放时，只有 `QQMusic.exe` 运行，没有客户端启动的 `QQMusicSvr.exe`。探测器临时启动的独立服务仍返回当前歌曲 ID、队列数量和枚举数量全为 0。
+- 结论：该 COM 服务与当前 22.41 播放器脱节，不进入写入测试。探测器将这种情况标记为 `standaloneReadOnly`，不得声明播放就绪。
+- Chrome 实际播放开发继续暂停；PC 路线下一步验证 Windows 系统媒体会话，精确歌曲定位与队列构造仍无已通过方案。

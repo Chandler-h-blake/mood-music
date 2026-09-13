@@ -26,7 +26,7 @@
 - [ADR 002 QQ 音乐网页版播放连接器](architecture/ADR-002-qqmusic-web-connector.md)：为何使用浏览器扩展控制网页播放器。
 - [ADR 003 手动 Cookie 音乐库同步](architecture/ADR-003-manual-cookie-library-sync.md)：为何首版由本机后端保管 Cookie 并只读同步“我喜欢”。
 - [ADR 004 双播放连接器路线](architecture/ADR-004-dual-qqmusic-playback-connectors.md)：Chrome 网页连接器与 Windows PC 连接器如何共享协议及安全边界。
-- [ADR 005 QQ 音乐 PC COM 自动化](architecture/ADR-005-qqmusic-pc-com-automation.md)：为何暂停网页播放路线，并将客户端注册的 COM 服务作为当前主路线。
+- [ADR 005 QQ 音乐 PC COM 自动化评估](architecture/ADR-005-qqmusic-pc-com-automation.md)：为何注册的遗留 COM 服务不能作为现代客户端播放路线。
 
 ## 数据与接口
 

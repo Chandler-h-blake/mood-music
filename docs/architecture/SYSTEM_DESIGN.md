@@ -2,7 +2,7 @@
 
 ## 1 架构结论
 
-MoodMusic 采用模块化单体、QQ 音乐数据适配器与可替换播放连接器组合。Next.js Web、FastAPI API、后台任务和 PostgreSQL 构成可独立运行的核心系统；数据适配器隔离 QQ 音乐只读内部接口，Windows PC 助手与备用 Chrome 扩展通过同一版本化本机协议接入，第三方细节不得渗透到搜索、画像或播放列表领域。当前实际播放开发以 PC COM 路线为主。
+MoodMusic 采用模块化单体、QQ 音乐数据适配器与可替换播放连接器组合。Next.js Web、FastAPI API、后台任务和 PostgreSQL 构成可独立运行的核心系统；数据适配器隔离 QQ 音乐只读内部接口，Windows PC 助手与备用 Chrome 扩展通过同一版本化本机协议接入，第三方细节不得渗透到搜索、画像或播放列表领域。当前实际播放开发以 PC 路线为主；UI Automation 与遗留 COM 均未通过，Windows 系统媒体会话和歌曲定位仍待验证。
 
 首期保持单机、单用户和本地优先。模型请求仍调用用户选择的云端提供方，但 QQ 音乐 Cookie、歌曲成员关系、历史、画像和密钥控制留在本机。Cookie 和模型 API Key 进入操作系统凭据存储，不进入业务数据库或模型请求。系统规模以一千至数千首歌曲为主，优先选择正确性、可恢复性和可审计性。
 
@@ -45,7 +45,7 @@ flowchart TB
     Bridge <-->|"配对 WebSocket"| Extension
     Extension <--> QQ
     Bridge <-->|"配对本机协议"| PCAgent
-    PCAgent <-->|"客户端注册 COM / 系统媒体能力"| QQPC
+    PCAgent <-->|"系统媒体能力 / 待验证适配"| QQPC
 ```
 
 主要数据流：
@@ -100,7 +100,7 @@ Web 不直接调用模型、访问数据库或持有服务端密钥。业务状�
 
 ### 3.5 QQ 音乐播放连接器
 
-连接器是播放反腐层：QQ 网页上的 DOM 或 PC 客户端注册的 COM 自动化对象与系统媒体状态被翻译成稳定的内部契约。核心服务只认识 `ExternalSongRef`、`ConnectorCapability`、`PlaybackCommand` 和 `PlaybackEvent`，不认识 CSS selector、窗口句柄、COM 成员或控件定位器。连接器不承担音乐库同步，也不导出浏览器 Cookie、客户端登录态或播放地址。依据 ADR 005，PC COM 助手是当前主路线，Chrome 扩展暂停并保留为备用。
+连接器是播放反腐层：QQ 网页上的 DOM 或 PC 客户端的可验证系统媒体状态与歌曲定位能力被翻译成稳定的内部契约。核心服务只认识 `ExternalSongRef`、`ConnectorCapability`、`PlaybackCommand` 和 `PlaybackEvent`，不认识 CSS selector、窗口句柄或平台成员。连接器不承担音乐库同步，也不导出浏览器 Cookie、客户端登录态或播放地址。PC 是当前主目标，但 ADR 005 已否决遗留 COM 路线；Chrome 扩展暂停并保留为备用。
 
 ## 4 搜索与匹配算法
 
