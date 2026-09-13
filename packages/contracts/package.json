@@ -1,0 +1,10 @@
+{
+  "name": "@moodmusic/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./src/connector-v1.ts",
+  "exports": {
+    ".": "./src/connector-v1.ts"
+  }
+}

@@ -1,0 +1,996 @@
+{
+  "$defs": {
+    "CatalogSearchCompletedMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/CatalogSearchCompletedPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "catalog.searchCompleted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "CatalogSearchCompletedMessage",
+      "type": "object"
+    },
+    "CatalogSearchCompletedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "items": {
+            "$ref": "#/$defs/CatalogSearchResult"
+          },
+          "maxItems": 50,
+          "title": "Results",
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "title": "CatalogSearchCompletedPayload",
+      "type": "object"
+    },
+    "CatalogSearchRequestPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedTrack": {
+          "$ref": "#/$defs/TrackReference"
+        },
+        "limit": {
+          "default": 10,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "query": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "expectedTrack"
+      ],
+      "title": "CatalogSearchRequestPayload",
+      "type": "object"
+    },
+    "CatalogSearchRequestedMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/CatalogSearchRequestPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "catalog.searchRequested",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "CatalogSearchRequestedMessage",
+      "type": "object"
+    },
+    "CatalogSearchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "album": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Album"
+        },
+        "artists": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Artists",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "playable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Playable"
+        },
+        "sourceTrackId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Sourcetrackid",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceTrackId",
+        "title",
+        "artists",
+        "confidence"
+      ],
+      "title": "CatalogSearchResult",
+      "type": "object"
+    },
+    "ConnectorHeartbeatMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/ConnectorHeartbeatPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "connector.heartbeat",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "ConnectorHeartbeatMessage",
+      "type": "object"
+    },
+    "ConnectorHeartbeatPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "activeTarget": {
+          "title": "Activetarget",
+          "type": "boolean"
+        },
+        "currentTrackId": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currenttrackid"
+        },
+        "installationId": {
+          "format": "uuid",
+          "title": "Installationid",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "degraded"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "installationId",
+        "status",
+        "activeTarget"
+      ],
+      "title": "ConnectorHeartbeatPayload",
+      "type": "object"
+    },
+    "ConnectorHelloMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/ConnectorHelloPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "connector.hello",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "ConnectorHelloMessage",
+      "type": "object"
+    },
+    "ConnectorHelloPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterVersion": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Adapterversion",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "enum": [
+              "catalog.search",
+              "queue.play",
+              "playback.control",
+              "playback.state"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "connectorType": {
+          "enum": [
+            "web",
+            "pc"
+          ],
+          "title": "Connectortype",
+          "type": "string"
+        },
+        "connectorVersion": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Connectorversion",
+          "type": "string"
+        },
+        "installationId": {
+          "format": "uuid",
+          "title": "Installationid",
+          "type": "string"
+        },
+        "targetAppVersion": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Targetappversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "installationId",
+        "connectorType",
+        "connectorVersion",
+        "targetAppVersion",
+        "adapterVersion",
+        "capabilities"
+      ],
+      "title": "ConnectorHelloPayload",
+      "type": "object"
+    },
+    "ConnectorWelcomeMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/ConnectorWelcomePayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "connector.welcome",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "ConnectorWelcomeMessage",
+      "type": "object"
+    },
+    "ConnectorWelcomePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "const": true,
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "connectorType": {
+          "enum": [
+            "web",
+            "pc"
+          ],
+          "title": "Connectortype",
+          "type": "string"
+        },
+        "heartbeatIntervalSeconds": {
+          "maximum": 300,
+          "minimum": 5,
+          "title": "Heartbeatintervalseconds",
+          "type": "integer"
+        },
+        "negotiatedCapabilities": {
+          "items": {
+            "enum": [
+              "catalog.search",
+              "queue.play",
+              "playback.control",
+              "playback.state"
+            ],
+            "type": "string"
+          },
+          "title": "Negotiatedcapabilities",
+          "type": "array"
+        },
+        "serverVersion": {
+          "title": "Serverversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accepted",
+        "connectorType",
+        "serverVersion",
+        "negotiatedCapabilities",
+        "heartbeatIntervalSeconds"
+      ],
+      "title": "ConnectorWelcomePayload",
+      "type": "object"
+    },
+    "PlaybackActionRequestPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "play",
+            "pause",
+            "resume",
+            "next",
+            "previous",
+            "stop"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "playlistId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Playlistid"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "PlaybackActionRequestPayload",
+      "type": "object"
+    },
+    "PlaybackActionRequestedMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/PlaybackActionRequestPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "playback.actionRequested",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "PlaybackActionRequestedMessage",
+      "type": "object"
+    },
+    "PlaybackQueueAcceptedMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/PlaybackQueueAcceptedPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "playback.queueAccepted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "PlaybackQueueAcceptedMessage",
+      "type": "object"
+    },
+    "PlaybackQueueAcceptedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptedTrackIds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Acceptedtrackids",
+          "type": "array"
+        },
+        "playlistId": {
+          "format": "uuid",
+          "title": "Playlistid",
+          "type": "string"
+        },
+        "rejectedTrackIds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rejectedtrackids",
+          "type": "array"
+        },
+        "snapshotHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Snapshothash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playlistId",
+        "snapshotHash",
+        "acceptedTrackIds"
+      ],
+      "title": "PlaybackQueueAcceptedPayload",
+      "type": "object"
+    },
+    "PlaybackQueueRejectedMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/PlaybackQueueRejectedPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "playback.queueRejected",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "PlaybackQueueRejectedMessage",
+      "type": "object"
+    },
+    "PlaybackQueueRejectedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "connector.notReady",
+            "connector.capabilityMissing",
+            "connector.targetIncompatible",
+            "queue.snapshotMismatch",
+            "queue.trackNotFound",
+            "queue.trackUnplayable",
+            "queue.ambiguousTrack",
+            "queue.operationFailed"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "playlistId": {
+          "format": "uuid",
+          "title": "Playlistid",
+          "type": "string"
+        },
+        "snapshotHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Snapshothash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playlistId",
+        "snapshotHash",
+        "code",
+        "message"
+      ],
+      "title": "PlaybackQueueRejectedPayload",
+      "type": "object"
+    },
+    "PlaybackQueueRequestPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "playlistId": {
+          "format": "uuid",
+          "title": "Playlistid",
+          "type": "string"
+        },
+        "snapshotHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Snapshothash",
+          "type": "string"
+        },
+        "stopAfterLast": {
+          "const": true,
+          "title": "Stopafterlast",
+          "type": "boolean"
+        },
+        "tracks": {
+          "items": {
+            "$ref": "#/$defs/TrackReference"
+          },
+          "minItems": 1,
+          "title": "Tracks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "playlistId",
+        "snapshotHash",
+        "stopAfterLast",
+        "tracks"
+      ],
+      "title": "PlaybackQueueRequestPayload",
+      "type": "object"
+    },
+    "PlaybackQueueRequestedMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/PlaybackQueueRequestPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "playback.queueRequested",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "PlaybackQueueRequestedMessage",
+      "type": "object"
+    },
+    "PlaybackStateChangedMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/PlaybackStateChangedPayload"
+        },
+        "protocolVersion": {
+          "const": "1.0",
+          "title": "Protocolversion",
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "sentAt": {
+          "format": "date-time",
+          "title": "Sentat",
+          "type": "string"
+        },
+        "type": {
+          "const": "playback.stateChanged",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "sentAt",
+        "type",
+        "payload"
+      ],
+      "title": "PlaybackStateChangedMessage",
+      "type": "object"
+    },
+    "PlaybackStateChangedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "durationMs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Durationms"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Errorcode"
+        },
+        "playlistId": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Playlistid"
+        },
+        "positionMs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Positionms"
+        },
+        "queueIndex": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Queueindex"
+        },
+        "sourceTrackId": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcetrackid"
+        },
+        "status": {
+          "enum": [
+            "idle",
+            "loading",
+            "playing",
+            "paused",
+            "stopped",
+            "ended",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "PlaybackStateChangedPayload",
+      "type": "object"
+    },
+    "TrackReference": {
+      "additionalProperties": false,
+      "properties": {
+        "album": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Album"
+        },
+        "artists": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Artists",
+          "type": "array"
+        },
+        "durationMs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Durationms"
+        },
+        "sourceTrackId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Sourcetrackid",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceTrackId",
+        "title",
+        "artists"
+      ],
+      "title": "TrackReference",
+      "type": "object"
+    }
+  },
+  "$id": "https://moodmusic.local/contracts/connector-message-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "discriminator": {
+    "mapping": {
+      "catalog.searchCompleted": "#/$defs/CatalogSearchCompletedMessage",
+      "catalog.searchRequested": "#/$defs/CatalogSearchRequestedMessage",
+      "connector.heartbeat": "#/$defs/ConnectorHeartbeatMessage",
+      "connector.hello": "#/$defs/ConnectorHelloMessage",
+      "connector.welcome": "#/$defs/ConnectorWelcomeMessage",
+      "playback.actionRequested": "#/$defs/PlaybackActionRequestedMessage",
+      "playback.queueAccepted": "#/$defs/PlaybackQueueAcceptedMessage",
+      "playback.queueRejected": "#/$defs/PlaybackQueueRejectedMessage",
+      "playback.queueRequested": "#/$defs/PlaybackQueueRequestedMessage",
+      "playback.stateChanged": "#/$defs/PlaybackStateChangedMessage"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ConnectorHelloMessage"
+    },
+    {
+      "$ref": "#/$defs/ConnectorWelcomeMessage"
+    },
+    {
+      "$ref": "#/$defs/ConnectorHeartbeatMessage"
+    },
+    {
+      "$ref": "#/$defs/CatalogSearchRequestedMessage"
+    },
+    {
+      "$ref": "#/$defs/CatalogSearchCompletedMessage"
+    },
+    {
+      "$ref": "#/$defs/PlaybackQueueRequestedMessage"
+    },
+    {
+      "$ref": "#/$defs/PlaybackQueueAcceptedMessage"
+    },
+    {
+      "$ref": "#/$defs/PlaybackQueueRejectedMessage"
+    },
+    {
+      "$ref": "#/$defs/PlaybackActionRequestedMessage"
+    },
+    {
+      "$ref": "#/$defs/PlaybackStateChangedMessage"
+    }
+  ],
+  "title": "MoodMusic Connector Message v1"
+}

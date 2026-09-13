@@ -15,6 +15,13 @@ from .ai_client import (
     ModelConfigurationError,
     ModelRequestError,
 )
+from .connector_protocol import (
+    ConnectorHelloMessage,
+    ConnectorProtocolDescriptor,
+    ConnectorWelcomeMessage,
+    connector_protocol_descriptor,
+    negotiate_connector,
+)
 from .credentials import (
     CredentialStore,
     CredentialStoreError,
@@ -154,6 +161,22 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": "moodmusic-api"}
+
+    @app.get(
+        "/api/v1/connectors/protocol",
+        response_model=ConnectorProtocolDescriptor,
+    )
+    async def connector_protocol() -> ConnectorProtocolDescriptor:
+        return connector_protocol_descriptor()
+
+    @app.post(
+        "/api/v1/connectors/negotiate",
+        response_model=ConnectorWelcomeMessage,
+    )
+    async def connector_negotiate(
+        payload: ConnectorHelloMessage,
+    ) -> ConnectorWelcomeMessage:
+        return negotiate_connector(payload)
 
 
     @app.get("/api/v1/settings", response_model=ModelSettings)
