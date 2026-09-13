@@ -231,3 +231,32 @@ class PlaylistHistoryPage(BaseModel):
     pageSize: int
     total: int
     playlists: list[PlaylistSummary]
+
+
+class PCPlaybackActionInput(BaseModel):
+    action: Literal["play", "pause", "next", "previous"]
+
+
+class PCPlaybackState(BaseModel):
+    status: Literal["playing", "paused", "stopped", "closed", "unavailable"]
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    positionMs: int | None = Field(default=None, ge=0)
+    durationMs: int | None = Field(default=None, ge=0)
+    canPlay: bool = False
+    canPause: bool = False
+    canNext: bool = False
+    canPrevious: bool = False
+    message: str
+
+
+class PCPlaybackActionResult(BaseModel):
+    status: Literal["completed", "acceptedUnconfirmed"]
+    action: Literal["play", "pause", "next", "previous"]
+    accepted: bool
+    observed: bool
+    playbackStatus: Literal["playing", "paused", "stopped", "closed", "unavailable"]
+    title: str | None = None
+    artist: str | None = None
+    message: str

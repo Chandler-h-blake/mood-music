@@ -72,3 +72,5 @@
 - 会话声明支持暂停、上一首和下一首；播放中 `canPlay=false`、`canPause=true` 符合当前状态。
 - 随后的显式单步控制验证中，暂停、继续、下一首、上一首均被系统接受且状态正确变化；“下一首 → 上一首”最终返回原歌曲。因此 `playback.state` 与基础 `playback.control` 可行性均已通过。
 - 系统媒体会话不提供目录搜索或精确队列写入能力，`catalog.search` 与 `queue.play` 仍需其他适配方式。
+- FastAPI 已提供 `GET /api/v1/playback/state` 和 `POST /api/v1/playback/actions`，实机通过纯 HTTP 调用完成状态读取及“暂停 → 继续”往返验证。
+- PC 正式路线不采用截图识别、OCR、屏幕坐标点击或模拟键盘搜索；这些方式不能验证歌曲身份和队列一致性。

@@ -13,7 +13,7 @@ $windowsPowerShell = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 foreach ($requiredPath in @($windowsPowerShell, $workerPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
-        throw "QQ 音乐控制所需文件不存在：$requiredPath"
+        throw "A required QQ Music control file is missing: $requiredPath"
     }
 }
 
@@ -43,7 +43,7 @@ try {
         [PSCustomObject]@{
             status = "timeout"
             action = $Action
-            message = "QQ 音乐没有在限定时间内响应控制命令。"
+            message = "QQ Music did not respond before the control timeout."
         } | ConvertTo-Json
         exit 0
     }
@@ -53,10 +53,17 @@ try {
     $errorOutput = Get-Content -LiteralPath $standardError -Raw -Encoding utf8 `
         -ErrorAction SilentlyContinue
     if ($controlProcess.ExitCode -eq 0 -and $output) {
+        $result = $output.Trim() | ConvertFrom-Json
+        $status = if ($result.observed) { "completed" } else { "acceptedUnconfirmed" }
+        $message = if ($result.observed) {
+            "Confirmed that QQ Music completed the control action."
+        } else {
+            "Windows accepted the command, but QQ Music did not confirm the action."
+        }
         [PSCustomObject]@{
-            status = "completed"
-            result = $output.Trim() | ConvertFrom-Json
-            message = "QQ 音乐已处理控制命令。"
+            status = $status
+            result = $result
+            message = $message
         } | ConvertTo-Json -Depth 5
     } else {
         [PSCustomObject]@{

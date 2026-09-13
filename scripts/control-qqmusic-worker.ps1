@@ -29,13 +29,34 @@ function Wait-WindowsRuntimeOperation {
         } |
         Select-Object -First 1
     $task = $asTaskMethod.MakeGenericMethod($ResultType).Invoke($null, @($Operation))
-    $task.Wait()
+    try {
+        $task.Wait()
+    } catch {
+        $rootError = $_.Exception.GetBaseException()
+        $errorCode = "0x{0:X8}" -f ($rootError.HResult -band 0xffffffffL)
+        throw "$($rootError.GetType().FullName) $errorCode`: $($rootError.Message)"
+    }
     return $task.Result
 }
 
-$manager = Wait-WindowsRuntimeOperation `
-    -Operation $managerType::RequestAsync() `
-    -ResultType $managerType
+function Get-MediaSessionManager {
+    $lastError = $null
+    foreach ($attempt in 1..3) {
+        try {
+            return Wait-WindowsRuntimeOperation `
+                -Operation $managerType::RequestAsync() `
+                -ResultType $managerType
+        } catch {
+            $lastError = $_
+            if ($attempt -lt 3) {
+                Start-Sleep -Milliseconds 250
+            }
+        }
+    }
+    throw $lastError
+}
+
+$manager = Get-MediaSessionManager
 $qqMusicSessions = @(
     $manager.GetSessions() |
         Where-Object { $_.SourceAppUserModelId -ieq "QQMusic.exe" }
@@ -46,6 +67,9 @@ if ($qqMusicSessions.Count -ne 1) {
 
 $session = $qqMusicSessions[0]
 $before = $session.GetPlaybackInfo()
+$beforeMedia = Wait-WindowsRuntimeOperation `
+    -Operation $session.TryGetMediaPropertiesAsync() `
+    -ResultType $mediaPropertiesType
 $controls = $before.Controls
 $noOp = $false
 $operation = $null
@@ -91,20 +115,42 @@ $accepted = if ($noOp) {
 if (-not $accepted) {
     throw "Windows rejected the QQMusic $Action command."
 }
-Start-Sleep -Milliseconds 350
 
-$after = $session.GetPlaybackInfo()
-$media = Wait-WindowsRuntimeOperation `
-    -Operation $session.TryGetMediaPropertiesAsync() `
-    -ResultType $mediaPropertiesType
+$expectedStatus = switch ($Action) {
+    "Play" { "Playing" }
+    "Pause" { "Paused" }
+    default { $null }
+}
+$observed = $noOp
+$after = $before
+$media = $beforeMedia
+$deadline = [DateTime]::UtcNow.AddSeconds(2)
+while (-not $observed -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 150
+    $after = $session.GetPlaybackInfo()
+    $media = Wait-WindowsRuntimeOperation `
+        -Operation $session.TryGetMediaPropertiesAsync() `
+        -ResultType $mediaPropertiesType
+
+    if ($expectedStatus) {
+        $observed = $after.PlaybackStatus.ToString() -eq $expectedStatus
+    } else {
+        $observed =
+            $media.Title -ne $beforeMedia.Title -or
+            $media.Artist -ne $beforeMedia.Artist
+    }
+}
 
 [PSCustomObject]@{
     action = $Action
     sourceAppId = $session.SourceAppUserModelId
     accepted = $accepted
+    observed = $observed
     noOp = $noOp
     beforeStatus = $before.PlaybackStatus.ToString()
     afterStatus = $after.PlaybackStatus.ToString()
+    beforeTitle = $beforeMedia.Title
+    beforeArtist = $beforeMedia.Artist
     title = $media.Title
     artist = $media.Artist
 } | ConvertTo-Json -Depth 4 -Compress

@@ -23,13 +23,34 @@ function Wait-WindowsRuntimeOperation {
         } |
         Select-Object -First 1
     $task = $asTaskMethod.MakeGenericMethod($ResultType).Invoke($null, @($Operation))
-    $task.Wait()
+    try {
+        $task.Wait()
+    } catch {
+        $rootError = $_.Exception.GetBaseException()
+        $errorCode = "0x{0:X8}" -f ($rootError.HResult -band 0xffffffffL)
+        throw "$($rootError.GetType().FullName) $errorCode`: $($rootError.Message)"
+    }
     return $task.Result
 }
 
-$manager = Wait-WindowsRuntimeOperation `
-    -Operation $managerType::RequestAsync() `
-    -ResultType $managerType
+function Get-MediaSessionManager {
+    $lastError = $null
+    foreach ($attempt in 1..3) {
+        try {
+            return Wait-WindowsRuntimeOperation `
+                -Operation $managerType::RequestAsync() `
+                -ResultType $managerType
+        } catch {
+            $lastError = $_
+            if ($attempt -lt 3) {
+                Start-Sleep -Milliseconds 250
+            }
+        }
+    }
+    throw $lastError
+}
+
+$manager = Get-MediaSessionManager
 
 $sessions = @(
     $manager.GetSessions() | ForEach-Object {

@@ -10,7 +10,7 @@ $windowsPowerShell = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 foreach ($requiredPath in @($windowsPowerShell, $workerPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
-        throw "媒体会话探测所需文件不存在：$requiredPath"
+        throw "A required media-session probe file is missing: $requiredPath"
     }
 }
 
@@ -31,7 +31,7 @@ try {
         $probeProcess.WaitForExit()
         [PSCustomObject]@{
             status = "timeout"
-            message = "Windows 媒体会话在限定时间内没有响应。"
+            message = "The Windows media-session probe timed out."
         } | ConvertTo-Json
         exit 0
     }
@@ -45,7 +45,7 @@ try {
         [PSCustomObject]@{
             status = if ($result.sessionCount -gt 0) { "sessionsFound" } else { "noSessions" }
             result = $result
-            message = "只读取了 Windows 媒体会话；没有执行播放控制。"
+            message = "Read Windows media sessions without changing playback."
         } | ConvertTo-Json -Depth 6
     } else {
         [PSCustomObject]@{

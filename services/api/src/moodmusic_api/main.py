@@ -40,6 +40,9 @@ from .models import (
     LikedPagePreview,
     ModelApiKeyInput,
     ModelSettings,
+    PCPlaybackActionInput,
+    PCPlaybackActionResult,
+    PCPlaybackState,
     PlaylistHistoryPage,
     ProfileJobCreate,
     QQMusicCookieInput,
@@ -57,6 +60,7 @@ from .semantic_search import (
     SearchSessionNotFoundError,
     SemanticSearchService,
 )
+from .windows_media import WindowsMediaError, WindowsMediaService
 
 
 @lru_cache
@@ -87,6 +91,11 @@ def get_embedding_client() -> LocalEmbeddingClient:
 @lru_cache
 def get_database() -> Database:
     return Database()
+
+
+@lru_cache
+def get_windows_media_service() -> WindowsMediaService:
+    return WindowsMediaService()
 
 
 @lru_cache
@@ -177,6 +186,31 @@ def create_app() -> FastAPI:
         payload: ConnectorHelloMessage,
     ) -> ConnectorWelcomeMessage:
         return negotiate_connector(payload)
+
+    @app.get("/api/v1/playback/state", response_model=PCPlaybackState)
+    async def get_playback_state(
+        media: Annotated[WindowsMediaService, Depends(get_windows_media_service)],
+    ) -> PCPlaybackState:
+        try:
+            return await media.get_state()
+        except WindowsMediaError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "playback.unavailable", "message": str(exc)},
+            ) from exc
+
+    @app.post("/api/v1/playback/actions", response_model=PCPlaybackActionResult)
+    async def control_playback(
+        payload: PCPlaybackActionInput,
+        media: Annotated[WindowsMediaService, Depends(get_windows_media_service)],
+    ) -> PCPlaybackActionResult:
+        try:
+            return await media.control(payload.action)
+        except WindowsMediaError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "playback.controlFailed", "message": str(exc)},
+            ) from exc
 
 
     @app.get("/api/v1/settings", response_model=ModelSettings)
