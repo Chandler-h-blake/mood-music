@@ -98,3 +98,30 @@ def test_windows_media_session_probe_is_read_only() -> None:
     assert "WaitForExit($TimeoutSeconds * 1000)" in runner
     assert "-WindowStyle Hidden" in runner
     assert 'status = "queryFailed"' in runner
+
+
+def test_qqmusic_control_has_explicit_action_and_session_allowlists() -> None:
+    runner = (ROOT / "scripts" / "control-qqmusic.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+    worker = (ROOT / "scripts" / "control-qqmusic-worker.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+
+    action_allowlist = 'ValidateSet("Play", "Pause", "Next", "Previous")'
+    assert action_allowlist in runner
+    assert action_allowlist in worker
+    assert 'SourceAppUserModelId -ieq "QQMusic.exe"' in worker
+    assert "$qqMusicSessions.Count -ne 1" in worker
+    for method in [
+        "TryPlayAsync",
+        "TryPauseAsync",
+        "TrySkipNextAsync",
+        "TrySkipPreviousAsync",
+    ]:
+        assert worker.count(method) == 1
+    for forbidden in ["TryStopAsync", "TryChangePlaybackPositionAsync"]:
+        assert forbidden not in worker
+
+    assert "WaitForExit($TimeoutSeconds * 1000)" in runner
+    assert "-WindowStyle Hidden" in runner

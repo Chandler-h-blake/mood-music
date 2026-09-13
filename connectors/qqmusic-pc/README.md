@@ -19,3 +19,16 @@ Windows 系统媒体会话只读探测：
 ```
 
 2026-09-13 实机已识别 `QQMusic.exe`、真实 `Playing` 状态、歌曲元数据、播放进度、总时长，以及暂停、上一首、下一首能力。探测器目前不调用任何控制方法；下一步将控制动作做成用户明确触发的单步测试。系统媒体会话不提供搜索和精确队列构造，这两项仍需独立解决。
+
+基础控制：
+
+```powershell
+& .\scripts\control-qqmusic.ps1 -Action Play
+& .\scripts\control-qqmusic.ps1 -Action Pause
+& .\scripts\control-qqmusic.ps1 -Action Next
+& .\scripts\control-qqmusic.ps1 -Action Previous
+```
+
+每次命令只操作唯一的 `QQMusic.exe` 媒体会话，并返回操作是否被系统接受及操作前后的状态。找不到会话、出现多个同名会话、目标能力未声明或 Windows 拒绝命令时都会报告 `rejected`。
+
+2026-09-13 四项命令已完成实机验证：暂停后恢复播放成功；“下一首 → 上一首”从原曲切到下一首后正确返回原曲。系统媒体会话基础控制因此可声明 `playback.control`，搜索和精确队列仍未实现。
