@@ -11,6 +11,7 @@ from moodmusic_api.connector_protocol import (
 
 ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "extensions" / "qqmusic-web-connector"
+PC_CONNECTOR = ROOT / "connectors" / "qqmusic-pc"
 
 
 def test_extension_manifest_has_minimum_permissions() -> None:
@@ -53,3 +54,22 @@ def test_extension_contract_bundle_matches_protocol_constants() -> None:
         assert f'"{connector_type}"' in source
     for capability in SUPPORTED_CAPABILITIES:
         assert f'"{capability}"' in source
+
+
+def test_pc_com_probe_is_read_only_and_fail_closed() -> None:
+    source = (PC_CONNECTOR / "src" / "QQMusicComProbe.cs").read_text(
+        encoding="utf-8"
+    )
+    runner = (ROOT / "scripts" / "probe-qqmusic-com.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+
+    for query in ["GetCurrentPlaySongID", "GetPlayItemCount", "EnumPlayItemIDs"]:
+        assert query in source
+    for mutation in ["AddSong", "DeleteSong", "DeleteAll", "SetPlaySequence", ".Play("]:
+        assert mutation not in source
+
+    assert "WaitForExit($TimeoutSeconds * 1000)" in runner
+    assert "$serverProcess = $null" in runner
+    assert "Stop-Process -Id $serverProcess.Id" in runner
+    assert "Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\WOW6432Node" in runner
