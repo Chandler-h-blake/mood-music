@@ -9,12 +9,15 @@ const SELECTORS = Object.freeze({
     'button[aria-label*="暂停"]',
     '[role="button"][title*="播放"]',
     '[role="button"][title*="暂停"]',
+    "a.player__btn_play",
+    "button.player__btn_play",
   ],
   queueSurface: [
     '[aria-label*="播放列表"]',
     '[aria-label*="队列"]',
-    '[class*="playlist"]',
-    '[class*="queue"]',
+    '[role="dialog"][aria-label*="播放列表"]',
+    '[role="dialog"][aria-label*="队列"]',
+    '[data-testid="player-queue"]',
   ],
   media: ["audio"],
 });
@@ -61,7 +64,11 @@ function probe() {
 
   return {
     ok: true,
-    status: capabilities.includes("catalog.search") ? "ready" : "degraded",
+    status: capabilities.includes("queue.play")
+      ? "playbackReady"
+      : capabilities.includes("catalog.search")
+        ? "catalogOnly"
+        : "degraded",
     pageKind: pageKind(),
     capabilities,
     diagnostics: {

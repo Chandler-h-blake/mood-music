@@ -41,6 +41,8 @@ def test_probe_iteration_cannot_read_credentials_or_click_page() -> None:
         "new Function(",
     ]
     assert all(value not in source for value in forbidden)
+    assert '[class*="playlist"]' not in source
+    assert '[class*="queue"]' not in source
 
 
 def test_extension_contract_bundle_matches_protocol_constants() -> None:

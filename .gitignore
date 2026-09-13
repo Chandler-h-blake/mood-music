@@ -47,3 +47,4 @@ Desktop.ini
 # Browser extension packaging
 extensions/**/dist/
 extensions/**/*.zip
+extensions/**/*.crx

@@ -13,6 +13,8 @@ $result = [ordered]@{
     uiAutomationAvailable = $false
     capabilities = @()
     diagnostics = [ordered]@{
+        topLevelWindowCount = 0
+        visibleWindowCount = 0
         totalControls = 0
         searchControlMatches = 0
         playbackControlMatches = 0
@@ -32,15 +34,69 @@ try {
         exit 0
     }
 
-    $target = $processes | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-    if ($null -eq $target) {
-        $result.status = "degraded"
-        $result.message = "检测到 QQ 音乐进程，但没有可访问的主窗口。"
+    if (-not ("MoodMusic.NativeWindows" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+namespace MoodMusic {
+    public sealed class WindowInfo {
+        public long Handle { get; set; }
+        public int ProcessId { get; set; }
+        public bool Visible { get; set; }
+    }
+
+    public static class NativeWindows {
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        public static WindowInfo[] Find(int[] processIds) {
+            var ids = new HashSet<int>(processIds);
+            var windows = new List<WindowInfo>();
+            EnumWindows(delegate(IntPtr handle, IntPtr ignored) {
+                uint processId;
+                GetWindowThreadProcessId(handle, out processId);
+                if (ids.Contains((int)processId)) {
+                    windows.Add(new WindowInfo {
+                        Handle = handle.ToInt64(),
+                        ProcessId = (int)processId,
+                        Visible = IsWindowVisible(handle)
+                    });
+                }
+                return true;
+            }, IntPtr.Zero);
+            return windows.ToArray();
+        }
+    }
+}
+"@
+    }
+
+    $processIds = @($processes | ForEach-Object { $_.Id })
+    $windows = @([MoodMusic.NativeWindows]::Find($processIds))
+    $visibleWindows = @($windows | Where-Object { $_.Visible })
+    $result.diagnostics.topLevelWindowCount = $windows.Count
+    $result.diagnostics.visibleWindowCount = $visibleWindows.Count
+    $window = $visibleWindows | Select-Object -First 1
+    if ($null -eq $window) {
+        $result.status = "backgroundOnly"
+        $result.message = "检测到 QQ 音乐进程，但没有可访问的可见主窗口；请从托盘恢复窗口后重试。"
         $result | ConvertTo-Json -Depth 5
         exit 0
     }
 
     $result.mainWindowAvailable = $true
+    $target = $processes | Where-Object { $_.Id -eq $window.ProcessId } | Select-Object -First 1
+    if ($null -eq $target) { $target = $processes | Select-Object -First 1 }
     try {
         $result.targetAppVersion = $target.MainModule.FileVersionInfo.FileVersion
     } catch {
@@ -50,7 +106,7 @@ try {
     Add-Type -AssemblyName UIAutomationClient
     Add-Type -AssemblyName UIAutomationTypes
     $root = [System.Windows.Automation.AutomationElement]::FromHandle(
-        [IntPtr]$target.MainWindowHandle
+        [IntPtr]$window.Handle
     )
     if ($null -eq $root) {
         throw "UI Automation 无法读取 QQ 音乐主窗口。"

@@ -1,5 +1,6 @@
 const labels = {
-  ready: "可用",
+  playbackReady: "可播放",
+  catalogOnly: "仅搜索可用",
   degraded: "能力不足",
   unknown: "未知",
 };
@@ -17,9 +18,12 @@ function render(status) {
   if (status?.lastError) {
     summary.textContent = status.lastError;
     summary.dataset.state = "error";
-  } else if (status?.target === "ready") {
-    summary.textContent = "页面与本机协议已完成能力协商";
+  } else if (status?.target === "playbackReady") {
+    summary.textContent = "页面已具备搜索、队列与播放候选能力";
     summary.dataset.state = "ready";
+  } else if (status?.target === "catalogOnly") {
+    summary.textContent = "协议正常，目前只确认了歌曲搜索能力";
+    summary.dataset.state = "idle";
   } else {
     summary.textContent = "打开并选中 QQ 音乐网页版后进行检测";
     summary.dataset.state = "idle";
