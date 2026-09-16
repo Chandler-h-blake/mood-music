@@ -246,7 +246,7 @@ class SemanticSearchService:
                                 featureScore=round(feature, 4),
                             )
                         )
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法保存临时播放队列。") from exc
 
         result = await self.get_playlist(playlist_id)
@@ -275,7 +275,7 @@ class SemanticSearchService:
                     .select_from(SearchCandidate)
                     .where(SearchCandidate.session_id == playlist.session_id)
                 )
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取临时播放队列。") from exc
         if search is None:
             return None
@@ -319,7 +319,7 @@ class SemanticSearchService:
         try:
             async with self._database.session_factory() as session:
                 search = await session.get(SearchSession, session_id)
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取待追加要求的搜索会话。") from exc
         if search is None:
             raise SearchSessionNotFoundError("搜索会话不存在。")
@@ -383,7 +383,7 @@ class SemanticSearchService:
                 candidate.user_removed = True
         except CandidateNotFoundError:
             raise
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法移除候选歌曲。") from exc
         return await self.sort_queue(
             session_id, QueueSortCreate(mode="match"), refresh_candidate_hash=True
@@ -448,7 +448,7 @@ class SemanticSearchService:
                         .limit(page_size)
                     )
                 ).all()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取临时队列历史。") from exc
         return PlaylistHistoryPage(
             page=page,
@@ -480,7 +480,7 @@ class SemanticSearchService:
                     .order_by(GeneratedPlaylist.created_at.desc(), GeneratedPlaylist.id.desc())
                     .limit(1)
                 )
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取搜索会话。") from exc
         return await self.get_playlist(playlist_id) if playlist_id else None
 
@@ -531,7 +531,7 @@ class SemanticSearchService:
                 candidate_hash = playlist.candidate_set_hash
         except (CandidateSetMismatchError, SearchSessionNotFoundError):
             raise
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法恢复历史队列快照。") from exc
 
         search, rows = await self._active_candidate_rows(session_id)
@@ -579,7 +579,7 @@ class SemanticSearchService:
                 )
         except SearchSessionNotFoundError:
             raise
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取当前候选集合。") from exc
         return search, rows
 
@@ -632,7 +632,7 @@ class SemanticSearchService:
                 stored_search.updated_at = func.now()
         except SearchSessionNotFoundError:
             raise
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法保存新的队列快照。") from exc
         result = await self.get_playlist(playlist_id)
         if result is None:
@@ -718,5 +718,5 @@ class SemanticSearchService:
                         )
                     ).all()
                 )
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取歌曲画像与向量。") from exc

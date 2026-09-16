@@ -10,11 +10,11 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema" / "connector-message-v1
 
 sys.path.insert(0, str(API_SRC))
 
-from moodmusic_api.connector_protocol import connector_message_json_schema  # noqa: E402
-from moodmusic_api.connector_protocol import (  # noqa: E402
+from moodmusic_api.connector_protocol import (
     PROTOCOL_VERSION,
     SUPPORTED_CAPABILITIES,
     SUPPORTED_CONNECTOR_TYPES,
+    connector_message_json_schema,
     connector_protocol_descriptor,
 )
 

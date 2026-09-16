@@ -4,6 +4,7 @@ import asyncio
 import ctypes
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -11,6 +12,7 @@ from uuid import UUID
 from .models import (
     PCPlaybackActionResult,
     PCPlaybackQueueResult,
+    PCPlaybackState,
     QueueSong,
     TemporaryQueue,
 )
@@ -33,13 +35,31 @@ class ResolvedQueueSong:
 class QQMusicPCService:
     """Control the installed QQ Music client through its own command entrypoint."""
 
-    def __init__(self, catalog: QQMusicClient, media: WindowsMediaService) -> None:
+    def __init__(
+        self,
+        catalog: QQMusicClient,
+        media: WindowsMediaService,
+        *,
+        auto_monitor: bool = True,
+        monitor_interval_seconds: float = 0.35,
+    ) -> None:
         self._catalog = catalog
         self._media = media
         self._lock = asyncio.Lock()
         self._playlist_id: UUID | None = None
         self._songs: list[ResolvedQueueSong] = []
         self._current_index = 0
+        self._current_observed = False
+        self._queue_active = False
+        self._playback_generation = 0
+        self._transitioning = False
+        self._ignore_mismatch_until = 0.0
+        self._natural_transition_armed = False
+        self._unexpected_title: str | None = None
+        self._unexpected_observations = 0
+        self._auto_monitor = auto_monitor
+        self._monitor_interval_seconds = monitor_interval_seconds
+        self._monitor_task: asyncio.Task[None] | None = None
         self.platform = os.name
 
     async def start_queue(self, queue: TemporaryQueue) -> PCPlaybackQueueResult:
@@ -57,9 +77,14 @@ class QQMusicPCService:
             self._playlist_id = queue.playlistId
             self._songs = resolved
             self._current_index = 0
-            observed = await self._play_current()
+            self._queue_active = True
+            self._playback_generation += 1
+            self._natural_transition_armed = False
+            self._reset_transition_detection()
+            observed = await self._run_play_command()
+            self._current_observed = observed
             current = self._songs[0]
-            return PCPlaybackQueueResult(
+            result = PCPlaybackQueueResult(
                 status="completed" if observed else "acceptedUnconfirmed",
                 playlistId=queue.playlistId,
                 acceptedCount=len(resolved),
@@ -69,15 +94,29 @@ class QQMusicPCService:
                 artist=current.artist,
                 observed=observed,
                 message=(
-                    f"已在 QQ 音乐中开始播放，并由后端接管这 {len(resolved)} 首歌的顺序。"
+                    f"已在 QQ 音乐中开始播放；MoodMusic 将逐首接管这 {len(resolved)} 首歌的顺序。"
                     if observed
-                    else f"已向 QQ 音乐提交第一首；后端已保存这 {len(resolved)} 首歌的顺序。"
+                    else (
+                        "已向 QQ 音乐提交第一首；MoodMusic 已保存并将逐首接管"
+                        f"这 {len(resolved)} 首歌。"
+                    )
                 ),
             )
+        self._ensure_monitor()
+        return result
 
     async def control(self, action: str) -> PCPlaybackActionResult:
         if action not in {"next", "previous"}:
-            return await self._media.control(action)
+            async with self._lock:
+                self._playback_generation += 1
+                self._transitioning = True
+                if action == "pause":
+                    self._natural_transition_armed = False
+                try:
+                    return await self._media.control(action)
+                finally:
+                    self._transitioning = False
+                    self._ignore_mismatch_until = time.monotonic() + 1.25
         async with self._lock:
             if not self._songs or self._playlist_id is None:
                 return await self._media.control(action)
@@ -97,7 +136,12 @@ class QQMusicPCService:
                     message="已经到达 MoodMusic 临时队列的边界。",
                 )
             self._current_index = target
-            observed = await self._play_current()
+            self._queue_active = True
+            self._playback_generation += 1
+            self._natural_transition_armed = False
+            self._reset_transition_detection()
+            observed = await self._run_play_command()
+            self._current_observed = observed
             current = self._songs[self._current_index]
             return PCPlaybackActionResult(
                 status="completed" if observed else "acceptedUnconfirmed",
@@ -113,6 +157,162 @@ class QQMusicPCService:
                     else "已提交队列切歌命令，但尚未从媒体状态确认。"
                 ),
             )
+
+    def _ensure_monitor(self) -> None:
+        if not self._auto_monitor:
+            return
+        if self._monitor_task is None or self._monitor_task.done():
+            self._monitor_task = asyncio.create_task(
+                self._monitor_loop(), name="qqmusic-managed-queue"
+            )
+
+    async def _monitor_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(self._monitor_interval_seconds)
+                try:
+                    if self._transitioning:
+                        continue
+                    observed_generation = self._playback_generation
+                    state = await self._media.get_state()
+                    if self._transitioning:
+                        continue
+                    await self._reconcile_player_state(state, observed_generation)
+                except (QQMusicPCError, WindowsMediaError, OSError):
+                    # A transient media-session or client error must not discard the queue.
+                    continue
+        except asyncio.CancelledError:
+            raise
+
+    async def _reconcile_player_state(
+        self,
+        state: PCPlaybackState,
+        observed_generation: int | None = None,
+    ) -> None:
+        async with self._lock:
+            if self._transitioning:
+                return
+            if (
+                observed_generation is not None
+                and observed_generation != self._playback_generation
+            ):
+                return
+            if not self._queue_active or not self._songs or self._playlist_id is None:
+                return
+
+            current = self._songs[self._current_index]
+            status = state.status
+            title = state.title
+            if title and self._same_title(title, current.title):
+                self._current_observed = True
+                self._reset_transition_detection()
+                remaining = (
+                    state.durationMs - state.positionMs
+                    if state.positionMs is not None and state.durationMs is not None
+                    else None
+                )
+                self._natural_transition_armed = bool(
+                    status == "playing"
+                    and remaining is not None
+                    and state.durationMs is not None
+                    and state.durationMs > 10_000
+                    and 0 <= remaining <= 3_000
+                )
+                if (
+                    self._natural_transition_armed
+                    and remaining is not None
+                    and remaining <= 500
+                ):
+                    await self._advance_or_finish(status)
+                return
+
+            # Pausing or temporarily losing the Windows media session is not a skip.
+            if status in {"paused", "closed", "unavailable"}:
+                self._natural_transition_armed = False
+                self._reset_transition_detection()
+                return
+
+            if time.monotonic() < self._ignore_mismatch_until:
+                return
+
+            if status == "stopped":
+                position = state.positionMs
+                duration = state.durationMs
+                if not (
+                    self._current_observed
+                    and position is not None
+                    and duration is not None
+                    and duration > 0
+                    and duration - position <= 3_000
+                ):
+                    return
+                transition_key = "__finished__"
+            elif (
+                status == "playing"
+                and title
+                and self._current_observed
+                and self._natural_transition_armed
+            ):
+                transition_key = title
+            elif status == "playing" and title and self._current_observed:
+                # An unrelated song outside the natural-end window is interference,
+                # not permission to mutate the managed queue position.
+                self._playback_generation += 1
+                self._current_observed = False
+                self._reset_transition_detection()
+                self._natural_transition_armed = False
+                self._current_observed = await self._run_play_command()
+                return
+            else:
+                return
+
+            if transition_key == self._unexpected_title:
+                self._unexpected_observations += 1
+            else:
+                self._unexpected_title = transition_key
+                self._unexpected_observations = 1
+
+            # If QQ Music happened to start the correct later song itself, adopt it
+            # without restarting playback. Otherwise issue one exact-song command.
+            if title:
+                for index in range(self._current_index + 1, len(self._songs)):
+                    if self._same_title(title, self._songs[index].title):
+                        self._current_index = index
+                        self._playback_generation += 1
+                        self._current_observed = True
+                        self._natural_transition_armed = False
+                        self._reset_transition_detection()
+                        return
+
+            await self._advance_or_finish(status)
+
+    async def _advance_or_finish(self, status: str) -> None:
+        if self._current_index >= len(self._songs) - 1:
+            if status == "playing":
+                await self._media.control("pause")
+            self._queue_active = False
+            self._natural_transition_armed = False
+            self._reset_transition_detection()
+            return
+
+        self._current_index += 1
+        self._playback_generation += 1
+        self._current_observed = False
+        self._natural_transition_armed = False
+        self._reset_transition_detection()
+        self._current_observed = await self._run_play_command()
+
+    async def _run_play_command(self) -> bool:
+        self._transitioning = True
+        try:
+            return await self._play_current()
+        finally:
+            self._transitioning = False
+            self._ignore_mismatch_until = time.monotonic() + 1.25
+
+    def _reset_transition_detection(self) -> None:
+        self._unexpected_title = None
+        self._unexpected_observations = 0
 
     async def _play_current(self) -> bool:
         song = self._songs[self._current_index]

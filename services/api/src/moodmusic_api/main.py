@@ -304,7 +304,7 @@ def create_app() -> FastAPI:
     ) -> dict[str, str]:
         try:
             await database.ping()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={"code": "database.unavailable", "message": "PostgreSQL 尚未就绪。"},
@@ -534,6 +534,11 @@ def create_app() -> FastAPI:
                 status_code=409,
                 detail={"code": "job.invalidState", "message": str(exc)},
             ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "database.unavailable", "message": str(exc)},
+            ) from exc
         background_tasks.add_task(
             profiles.run_job,
             result.jobId,
@@ -652,10 +657,15 @@ def create_app() -> FastAPI:
                 status_code=404,
                 detail={"code": "candidate.notFound", "message": str(exc)},
             ) from exc
-        except (SearchSessionNotFoundError, LibraryDatabaseError) as exc:
+        except SearchSessionNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "search.notFound", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
             raise HTTPException(
                 status_code=503,
-                detail={"code": "queue.updateFailed", "message": str(exc)},
+                detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
 
     @app.patch(
@@ -676,10 +686,15 @@ def create_app() -> FastAPI:
                 status_code=409,
                 detail={"code": "candidate.setChanged", "message": str(exc)},
             ) from exc
-        except (SearchSessionNotFoundError, LibraryDatabaseError) as exc:
+        except SearchSessionNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "search.notFound", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
             raise HTTPException(
                 status_code=503,
-                detail={"code": "queue.updateFailed", "message": str(exc)},
+                detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
 
     @app.post(
@@ -700,10 +715,15 @@ def create_app() -> FastAPI:
                 status_code=404,
                 detail={"code": "candidate.notFound", "message": str(exc)},
             ) from exc
-        except (SearchSessionNotFoundError, LibraryDatabaseError) as exc:
+        except SearchSessionNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "search.notFound", "message": str(exc)},
+            ) from exc
+        except LibraryDatabaseError as exc:
             raise HTTPException(
                 status_code=503,
-                detail={"code": "queue.updateFailed", "message": str(exc)},
+                detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
 
     @app.get("/api/v1/generated-playlists", response_model=PlaylistHistoryPage)

@@ -70,7 +70,7 @@ class ProfileService:
                         updated_at=utc_now(),
                     )
                 )
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法创建画像任务。") from exc
         return JobStatus(
             jobId=job_id,
@@ -191,7 +191,7 @@ class ProfileService:
                         .order_by(Song.id)
                     )
                 )
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取待画像歌曲。") from exc
 
     async def _pending_songs(self, songs: list[Song], *, rebuild: bool) -> list[Song]:
@@ -207,7 +207,7 @@ class ProfileService:
                         )
                     )
                 ).all()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法检查画像增量状态。") from exc
         fingerprints = {song_id: fingerprint for song_id, fingerprint in rows}
         return [song for song in songs if fingerprints.get(song.id) != self._fingerprint(song)]
@@ -272,14 +272,14 @@ class ProfileService:
                 job.completed += len(songs)
                 job.checkpoint = {**job.checkpoint, "lastSongId": str(songs[-1].id)}
                 job.updated_at = now
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("保存歌曲画像失败。") from exc
 
     async def _get_job_row(self, job_id: uuid.UUID) -> IndexJob:
         try:
             async with self._database.session_factory() as session:
                 job = await session.get(IndexJob, job_id)
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取画像任务。") from exc
         if job is None:
             raise ProfileJobNotFoundError("画像任务不存在。")
@@ -306,7 +306,7 @@ class ProfileService:
                 elif increment_failed:
                     job.failed += 1
                 job.updated_at = utc_now()
-        except SQLAlchemyError:
+        except (SQLAlchemyError, OSError):
             return
 
     async def _record_song_failure(self, job_id: uuid.UUID, song: Song, error: str) -> None:
@@ -322,7 +322,7 @@ class ProfileService:
                 }
                 job.last_error = f"{song.title}：{error}"[:512]
                 job.updated_at = utc_now()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("记录画像跳过项失败。") from exc
 
     def _fingerprint(self, song: Song) -> str:

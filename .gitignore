@@ -29,6 +29,7 @@ playwright-report/
 test-results/
 .coverage
 htmlcov/
+.run/
 
 # Local data and databases
 /data/

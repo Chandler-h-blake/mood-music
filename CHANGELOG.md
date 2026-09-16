@@ -6,6 +6,9 @@
 
 ### Changed
 
+- 将项目分发许可调整为 MIT，并补齐贡献、安全、行为准则和 GitHub 协作模板。
+- 以统一 PowerShell 脚本替代个人 Conda 路径，提供安装、诊断、完整/演示启动、停止和全量检查入口。
+- 将 Web 依赖中的 Next.js 升级至 16.3.5，并通过生产依赖审计。
 - 将手动粘贴 QQ 音乐 Cookie 确认为首版正式登录方案；Cookie 由 Windows 凭据存储或 DPAPI 保护，只供本机只读同步使用。
 - 将 QQ 音乐接入拆分为 Python 只读数据适配器和 Manifest V3 网页播放连接器；二维码登录留作后续评估。
 - 明确禁止 QQ 音乐写操作、音频直链、代理、下载、缓存和解密进入首版范围。
@@ -22,6 +25,9 @@
 
 ### Added
 
+- 增加无需 QQ 音乐 Cookie、模型密钥或 Docker 的可交互演示模式。
+- 增加 Windows API 测试、Web lint/typecheck/build/audit 的 GitHub Actions CI 与 Dependabot 配置。
+- 增加中英文项目入口、v0.1.0 发布说明和 GitHub 社交预览图。
 - 建立产品、架构、数据、接口、质量和开发规范文档。
 - 建立 Web、API、浏览器扩展、共享契约、基础设施和端到端测试目录。
 - 确定独立 Web 应用与 QQ 音乐网页版连接器的目标形态。

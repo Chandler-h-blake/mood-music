@@ -109,7 +109,7 @@ class LibraryService:
                         .limit(page_size)
                     )
                 ).all()
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取本地曲库，请检查 PostgreSQL 是否已启动。") from exc
 
         songs = [
@@ -143,7 +143,7 @@ class LibraryService:
                         deactivated_count=0,
                     )
                 )
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError(
                 "无法创建同步批次，请检查 PostgreSQL 是否已启动并完成迁移。"
             ) from exc
@@ -249,7 +249,7 @@ class LibraryService:
                 batch.error_code = None
         except LibraryDatabaseError:
             raise
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("保存完整曲库失败，旧曲库未被修改。") from exc
 
         return PersistCounts(inserted=inserted, updated=updated, deactivated=deactivated)
@@ -262,7 +262,7 @@ class LibraryService:
                     batch.status = "failed"
                     batch.completed_at = utc_now()
                     batch.error_code = error_code
-        except SQLAlchemyError:
+        except (SQLAlchemyError, OSError):
             return
 
     @staticmethod

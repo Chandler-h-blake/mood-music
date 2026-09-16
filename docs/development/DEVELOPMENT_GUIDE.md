@@ -40,16 +40,15 @@ test(profile): cover locked field rebuild
 
 ## 4 本地工作流
 
-当前使用 README 中分开的 Docker、API 和 Web 命令启动。统一 PowerShell 入口仍是 M1 的工程欠账，完成后应提供：
+仓库提供统一 PowerShell 入口：
 
-1. `setup`：检查版本、建立虚拟环境、安装锁定依赖。
-2. `dev`：启动 PostgreSQL、API、worker 和 Web。
-3. `lint`：格式、静态类型和契约漂移检查。
-4. `test`：单元与集成测试。
-5. `test-e2e`：启动隔离环境运行 Playwright。
-6. `build`：产生 Web、API 和扩展可重复构建。
+1. `scripts/setup.ps1`：检查版本、建立 `.venv` 并安装 API 与 Web 依赖；`-DemoOnly` 只准备演示所需的 Web 依赖。
+2. `scripts/doctor.ps1`：只读检查本机依赖、Docker、QQ 音乐与端口状态。
+3. `scripts/start.ps1`：启动 PostgreSQL、迁移、API 和 Web；`-Demo` 只启动零配置演示。
+4. `scripts/test.ps1`：运行 Ruff、pytest、ESLint、TypeScript、生产构建和依赖审计。
+5. `scripts/stop.ps1`：停止由启动脚本创建的 API 和 Web 进程，保留数据库数据。
 
-Windows 应提供 `scripts/*.ps1`，CI 可使用等价跨平台命令。每条脚本失败时返回非零退出码，不隐藏错误。
+GitHub Actions 使用等价命令。每条脚本失败时返回非零退出码，不隐藏错误。
 
 ## 5 需求到交付
 

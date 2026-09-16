@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible MoodMusic problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve MoodMusic. Never include cookies, API keys, logs containing credentials, or private library exports.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include what you expected and what occurred.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Start MoodMusic…\n2. Open…\n3. Click…"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Windows version, QQ Music version, Python and Node versions
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Remove all credentials and personal music data before pasting.
+      render: shell

@@ -41,6 +41,7 @@
 - [安全与隐私](development/SECURITY_AND_PRIVACY.md)：密钥、QQ 登录态、音频和日志边界。
 - [QQ 音乐兼容性记录](development/QQMUSIC_COMPATIBILITY.md)：真实接口验证范围、结果和当前限制。
 - [测试策略](quality/TEST_STRATEGY.md)：测试层级、AI 评测集和发布门槛。
+- [v0.1.0 发布说明](releases/v0.1.0.md)：首个公开预览的功能、快速体验与已知限制。
 
 ## 历史参考
 

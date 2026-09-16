@@ -5,7 +5,7 @@
 协议变更后运行：
 
 ```powershell
-& "D:\Program\CondaEnvs\mood-music\python.exe" packages\contracts\generate_connector_schema.py
+.\.venv\Scripts\python.exe packages\contracts\generate_connector_schema.py
 ```
 
 随后运行后端测试。测试会检查生成后的 JSON Schema 与 Pydantic 模型没有漂移。

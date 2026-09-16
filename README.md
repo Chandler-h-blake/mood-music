@@ -1,10 +1,37 @@
-# MoodMusic AI 选歌器
+# MoodMusic · AI 选歌器
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-29e68b.svg)](LICENSE)
+[![CI](https://github.com/Chandler-h-blake/mood-music/actions/workflows/ci.yml/badge.svg)](https://github.com/Chandler-h-blake/mood-music/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.13-3776AB.svg)](services/api/pyproject.toml)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522.13-339933.svg)](apps/web/package.json)
+[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4.svg)](docs/development/DEVELOPMENT_GUIDE.md)
+
+![MoodMusic social preview](docs/assets/moodmusic-social-preview.png)
+
+用一句自然语言，从自己的 QQ 音乐“喜欢”列表中生成可调整、可播放的情绪队列。
+
+*Describe a feeling. MoodMusic finds the matching tracks in your own liked library and turns them into an editable, playable queue.* [English README](README.en.md)
+
+## 三分钟体验（无需账号、密钥或 Docker）
+
+演示模式使用仓库自带的虚构歌曲数据，不会连接 QQ 音乐、模型服务或上传任何内容：
+
+```powershell
+.\scripts\setup.ps1 -DemoOnly
+.\scripts\start.ps1 -Demo
+```
+
+打开 `http://127.0.0.1:5173`。也可以在已运行的 Web 开发服务器后访问 `http://127.0.0.1:5173/?demo=1`。体验结束运行 `.\scripts\stop.ps1`。
+
+## 界面预览
+
+![MoodMusic 零配置演示界面](docs/assets/moodmusic-demo.png)
 
 MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不需要逐个勾选语言、流派或年代，只需描述当下想听的感觉，例如“凌晨开车时有一点孤独，但不要太悲伤”，系统就会从用户自己的 QQ 音乐“喜欢”列表中找出全部符合条件的歌曲，生成可预览、可调整、可播放的临时队列。
 
 本仓库采用“独立 Web 应用 + 本机 QQ 音乐数据适配器 + 可替换播放连接器”的产品形态。MoodMusic 后端使用用户手动粘贴并由 Windows 安全存储保护的 QQ 音乐 Cookie，只读同步当前账号的“我喜欢”；当前优先把临时队列交给 Windows QQ 音乐客户端，Chrome 网页扩展暂停开发并保留为备用适配器。项目不修改或注入 QQ 音乐安装文件，不下载或转发受保护音频，也不绕过会员、地区、版权或 DRM 限制。
 
-> 当前状态（2026-09-13）：QQ 音乐曲库、DeepSeek 多角度画像、BGE-M3 语义选歌、三种排序、候选编辑和历史回放均已可用。PC 连接器已能从网页经 FastAPI 精确启动临时队列第一首，并按后端队列处理用户触发的上一首和下一首；播放状态与暂停/继续由 Windows 系统媒体 API 提供。下一步补齐自然结束自动续播和最后一首停止。Chrome 实际播放暂停，外部推荐仍待开发。
+> 当前状态（2026-09-14）：QQ 音乐曲库、DeepSeek 多角度画像、BGE-M3 语义选歌、三种排序、候选编辑和历史回放均已可用。MoodMusic 已提供独立播放器页，上一首、暂停、继续和下一首均经 FastAPI 直接控制本机 QQ 音乐；PC 连接器快速监视播放状态并在接近自然结束时提前接续应用歌单，末曲后暂停平台自动续播。QQ 音乐仍负责合规的音频解码与输出，MoodMusic 不获取音频地址。Chrome 实际播放暂停，外部推荐仍待开发。
 
 ## 产品要解决的问题
 
@@ -59,7 +86,7 @@ MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不�
 | AI | 可配置聊天模型与 Embedding 模型 | 结构化建档、意图理解、向量检索与边界复核 |
 | QQ 音乐数据适配器 | Python、HTTP 客户端、Windows 凭据存储/DPAPI | 验证本机 Cookie、只读同步“我喜欢”、隔离私有接口变化 |
 | QQ 音乐网页连接器 | TypeScript、Chrome Extension Manifest V3 | 备用适配器；当前保留探测和公共协议，暂停实际播放开发 |
-| QQ 音乐 PC 连接器 | FastAPI、客户端命令入口、Windows 系统媒体能力 | 精确启动歌曲并维护临时队列顺序；待补自动续播和末曲停止 |
+| QQ 音乐 PC 连接器 | FastAPI、客户端命令入口、Windows 系统媒体能力 | 精确逐首点播、监视自然结束与客户端切歌、维护临时队列顺序 |
 | 后台任务 | 首期数据库任务表；达到触发条件后引入 Redis 与 Celery | 初始化、增量画像、重试和断点恢复 |
 | 测试 | pytest、Vitest、Playwright | 单元、集成、合约和端到端测试 |
 | 交付 | Docker Compose、GitHub Actions | 本地依赖、持续集成和可重复构建 |
@@ -133,30 +160,23 @@ mood-music/
 
 ## 运行说明
 
-当前可运行的是曲库同步、AI 画像、语义选歌和临时队列纵向链路。进入仓库后先启动数据库：
+推荐在 Windows PowerShell 中使用统一脚本。首次安装依赖：
 
 ```powershell
-docker compose -f infra\docker\compose.yml up -d
+.\scripts\setup.ps1
 ```
 
-然后激活 D 盘 Conda 环境，安装 API 依赖并执行迁移：
+运行环境自检并启动完整模式。脚本会启动 PostgreSQL、执行迁移，并在后台启动 API 和 Web：
 
 ```powershell
-conda activate D:\Program\CondaEnvs\mood-music
-Set-Location services\api
-python -m pip install -e ".[dev]"
-$env:DATABASE_URL = "postgresql+asyncpg://moodmusic:moodmusic@127.0.0.1:5432/moodmusic"
-python -m alembic upgrade head
-$env:MOODMUSIC_DATA_DIR = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) '..\..\data'))
-python -m uvicorn moodmusic_api.main:app --host 127.0.0.1 --port 8000 --reload
+.\scripts\doctor.ps1
+.\scripts\start.ps1
 ```
 
-另开一个 PowerShell 窗口启动 Web 界面：
+结束使用后停止 MoodMusic 进程。PostgreSQL 容器和本地数据默认保留：
 
 ```powershell
-Set-Location apps\web
-npm install
-npm run dev
+.\scripts\stop.ps1
 ```
 
 浏览器打开 `http://localhost:5173`，按“同步曲库 → 模型设置 → 更新全部画像 → AI 选歌”的顺序即可运行完整链路。模型 API Key 通过页面提交到本机 API，并由独立的 Windows DPAPI 信封保护；不会进入 `.env`、数据库或浏览器持久化。
@@ -178,24 +198,12 @@ npm run dev
 
 `GET /api/v1/health` 检查 API 进程，`GET /api/v1/health/ready` 同时验证 PostgreSQL。Docker 数据保存在命名卷 `moodmusic_moodmusic-postgres-data`；普通 `docker compose down` 不会删除它。
 
-不要把真实 Cookie 粘贴到终端、源码、`.env`、Issue、提交信息或聊天。开发检查使用：
+不要把真实 Cookie 粘贴到终端、源码、`.env`、Issue、提交信息或聊天。完整开发检查使用：
 
 ```powershell
-python -m ruff check .
-python -m pytest
+.\scripts\test.ps1
 ```
-
-后续工程完善后，仓库将提供统一入口：
-
-```text
-make setup    安装并校验开发依赖
-make dev      启动 Web、API 和本地基础设施
-make test     执行全部自动化测试
-make lint     执行格式和静态检查
-```
-
-Windows 不具备 `make` 时，将提供功能完全等价的 PowerShell 脚本。
 
 ## 分发边界
 
-当前项目定位为个人自用研究项目，不包含 QQ 音乐二进制、商标资源或音频，不代表腾讯或 QQ 音乐官方产品。对外发布、多人使用或商业化之前，必须重新审查平台条款、内容授权、隐私说明和所用依赖许可证。仓库目前不附带开源许可证，默认不授予再分发权利。
+本项目依据 [MIT License](LICENSE) 开放源代码，允许自由使用、修改与再分发。它不包含 QQ 音乐二进制、商标资源或音频，也不代表、隶属于或获得腾讯及 QQ 音乐官方认可。使用者仍须自行遵守适用的平台条款、内容授权、隐私要求与法律法规；本项目不提供绕过会员、地区、版权或 DRM 限制的功能。
