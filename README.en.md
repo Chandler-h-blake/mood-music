@@ -12,18 +12,19 @@ Describe a feeling such as “driving alone after midnight, a little lonely but 
 
 [中文说明](README.md)
 
-## Try it in three minutes
+## Try it without configuring the full project
 
-The interactive demo uses fictional bundled tracks. It needs no QQ Music account, model key, Docker, or external request.
+The interactive demo uses fictional bundled tracks. It needs no QQ Music account, model key, Python, Docker, or external model request.
 
-```powershell
-.\scripts\setup.ps1 -DemoOnly
-.\scripts\start.ps1 -Demo
-```
+On Windows 10 or 11:
 
-Open `http://127.0.0.1:5173`, then explore library search, natural-language selection, queue sorting and editing, history restore, and playback controls. Run `.\scripts\stop.ps1` when finished.
+1. Install [Node.js LTS](https://nodejs.org/en/download) if it is not already installed.
+2. Download and extract the repository ZIP.
+3. Double-click **`Start-MoodMusic-Demo.cmd`**. The first run downloads the demo components and then opens your browser automatically.
 
-If the web development server is already running, append `?demo=1` to its URL to enter demo mode.
+Double-click **`Stop-MoodMusic.cmd`** when finished. Later launches reuse the installed components.
+
+PowerShell users can run `.\scripts\start-demo.ps1` instead.
 
 ## Interface preview
 

@@ -1,4 +1,4 @@
-# MoodMusic · AI 选歌器
+# MoodMusic · 用一句话找到此刻想听的歌
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-29e68b.svg)](LICENSE)
 [![CI](https://github.com/Chandler-h-blake/mood-music/actions/workflows/ci.yml/badge.svg)](https://github.com/Chandler-h-blake/mood-music/actions/workflows/ci.yml)
@@ -8,202 +8,120 @@
 
 ![MoodMusic social preview](docs/assets/moodmusic-social-preview.png)
 
-用一句自然语言，从自己的 QQ 音乐“喜欢”列表中生成可调整、可播放的情绪队列。
+比如输入：
 
-*Describe a feeling. MoodMusic finds the matching tracks in your own liked library and turns them into an editable, playable queue.* [English README](README.en.md)
+> 凌晨一个人开车，有一点孤独，但不要太悲伤。
 
-## 三分钟体验（无需账号、密钥或 Docker）
+MoodMusic 会从你的 QQ 音乐“喜欢”列表中找到符合这种感觉的歌曲，组成一份可以继续调整和播放的临时歌单。
 
-演示模式使用仓库自带的虚构歌曲数据，不会连接 QQ 音乐、模型服务或上传任何内容：
+想先看看效果？演示模式不需要 QQ 音乐账号、Cookie、模型密钥、Python 或 Docker，也不会上传任何数据。
+
+[English README](README.en.md)
+
+## 同学试玩：下载后双击即可
+
+目前推荐使用 Windows 10 或 Windows 11。
+
+1. 安装 [Node.js LTS](https://nodejs.org/en/download)。安装时保持默认选项即可；已经安装过可跳过。
+2. 点击 GitHub 页面右上方绿色的 **Code → Download ZIP**，下载并解压项目。
+3. 打开解压后的文件夹，双击 **`Start-MoodMusic-Demo.cmd`**。
+
+第一次启动需要联网下载演示组件，通常会等待几分钟。准备完成后，浏览器会自动打开 MoodMusic。
+
+试玩结束后，双击 **`Stop-MoodMusic.cmd`** 即可停止。以后再次启动仍然双击 `Start-MoodMusic-Demo.cmd`，不需要重复安装。
+
+如果你习惯使用 PowerShell，也可以在项目目录运行：
 
 ```powershell
-.\scripts\setup.ps1 -DemoOnly
-.\scripts\start.ps1 -Demo
+.\scripts\start-demo.ps1
 ```
 
-打开 `http://127.0.0.1:5173`。也可以在已运行的 Web 开发服务器后访问 `http://127.0.0.1:5173/?demo=1`。体验结束运行 `.\scripts\stop.ps1`。
-
-## 界面预览
+## 演示模式里能体验什么
 
 ![MoodMusic 零配置演示界面](docs/assets/moodmusic-demo.png)
 
-MoodMusic 是一个面向个人音乐库的自然语言选歌产品。用户不需要逐个勾选语言、流派或年代，只需描述当下想听的感觉，例如“凌晨开车时有一点孤独，但不要太悲伤”，系统就会从用户自己的 QQ 音乐“喜欢”列表中找出全部符合条件的歌曲，生成可预览、可调整、可播放的临时队列。
+- 浏览一份虚构的“我喜欢”曲库。
+- 用自然语言描述想听的感觉。
+- 查看并调整 AI 生成的候选队列。
+- 切换匹配度、情绪曲线和随机排序。
+- 删除、拖动歌曲并恢复历史队列。
+- 体验播放控制界面。
 
-本仓库采用“独立 Web 应用 + 本机 QQ 音乐数据适配器 + 可替换播放连接器”的产品形态。MoodMusic 后端使用用户手动粘贴并由 Windows 安全存储保护的 QQ 音乐 Cookie，只读同步当前账号的“我喜欢”；当前优先把临时队列交给 Windows QQ 音乐客户端，Chrome 网页扩展暂停开发并保留为备用适配器。项目不修改或注入 QQ 音乐安装文件，不下载或转发受保护音频，也不绕过会员、地区、版权或 DRM 限制。
+演示模式使用项目自带的虚构歌曲，不会连接 QQ 音乐，也不会调用付费模型。演示中的播放按钮只展示交互效果，不会播放真实音频。
 
-> 当前状态（2026-09-14）：QQ 音乐曲库、DeepSeek 多角度画像、BGE-M3 语义选歌、三种排序、候选编辑和历史回放均已可用。MoodMusic 已提供独立播放器页，上一首、暂停、继续和下一首均经 FastAPI 直接控制本机 QQ 音乐；PC 连接器快速监视播放状态并在接近自然结束时提前接续应用歌单，末曲后暂停平台自动续播。QQ 音乐仍负责合规的音频解码与输出，MoodMusic 不获取音频地址。Chrome 实际播放暂停，外部推荐仍待开发。
+## 使用自己的 QQ 音乐曲库（进阶）
 
-## 产品要解决的问题
+完整模式适合愿意继续配置本机环境的用户。它目前需要：
 
-用户的“喜欢”歌单可能包含一千多首长期积累的歌曲。传统标签筛选擅长回答“粤语歌”或“乡村音乐”，却很难表达复合、模糊甚至带排除条件的感受。MoodMusic 重点解决以下任务：
+- Windows 10/11 与 QQ 音乐桌面客户端
+- Python 3.12 或 3.13
+- Node.js 22.13 或更高版本
+- Docker Desktop
+- 可用的模型 API Key
 
-- 用自然语言表达完整听歌意图，而不是要求用户操作复杂筛选器。
-- 只从用户的“喜欢”列表中形成主候选队列，重新发现已经收藏但被数量淹没的歌曲。
-- 为每首歌建立来源可追溯、允许未知值、可以增量更新的多维画像。
-- 将全部达到“均衡匹配”标准的歌曲放入候选队列，不做固定 Top-K 截断；没有合适歌曲时明确显示 0 首。
-- 支持匹配度、情绪曲线和随机三种排序方式。
-- 预览后把确认队列交给用户选择的 QQ 音乐网页或 PC 播放连接器，并在能力允许时于最后一首结束后停止。
-- 将网络发现的相似歌曲独立展示，绝不自动混入“喜欢”候选队列。
-
-## 目标用户与使用场景
-
-首个版本只服务于单个 Windows 用户和当前登录的 QQ 音乐账号，不设计多租户、社交或商业化能力。
-
-典型流程：
-
-1. 用户在浏览器正常登录 QQ 音乐，从开发者工具复制当前会话 Cookie，并粘贴到 MoodMusic 本机设置页。
-2. 后端验证登录状态，通过隔离的只读 QQ 音乐适配器分页同步全部“喜欢”歌曲；也可以使用手动文件导入作为回退。
-3. 后端为新增或变化的歌曲建立多维画像，并显示进度、失败原因和可恢复状态。
-4. 用户输入自然语言感觉，系统理解核心意图、强弱、排除项、场景和排序趋势。
-5. 系统全量评估已完成画像的“喜欢”歌曲，返回全部通过均衡阈值或边界复核的结果。
-6. 用户可以预览、删除、拖动排序、继续追加要求，或选择三种排序模式。
-7. 用户配对 Windows PC 连接器并把确认队列交给 QQ 音乐客户端；Chrome 扩展保留为备用实现。
-8. 用户可单独点击“更多风格类似的歌”，查看经过真实检索和身份校验的外部建议。
-
-## 已确认的产品规则
-
-| 规则 | 产品约定 |
-| --- | --- |
-| 主筛选范围 | AI 主结果永远只来自当前“喜欢”列表 |
-| 匹配尺度 | 默认使用均衡匹配，整体感觉优先 |
-| 结果数量 | 返回全部通过标准的歌曲，不设置固定数量上限 |
-| 空结果 | 合法显示 0 首，不偷偷放宽条件或塞入“最接近”歌曲 |
-| 外部推荐 | 独立区域展示，必须经过歌曲身份校验，不自动加入主队列 |
-| 反馈 | 删除、跳过、拖动和追加要求仅影响当前搜索会话，不自动形成长期偏好 |
-| 长期修正 | 只有用户明确编辑并锁定歌曲画像时才长期保存 |
-| 排序 | 匹配度、情绪曲线、随机 |
-| 播放结束 | 最后一首结束后停止，不自动续播平台推荐 |
-| 展示 | 主结果不展示冗长的 AI 选歌解释 |
-
-## 技术方案
-
-| 模块 | 技术 | 职责 |
-| --- | --- | --- |
-| Web 应用 | Next.js、React、TypeScript | 搜索、任务进度、候选预览、画像与设置页面 |
-| API 服务 | Python、FastAPI、Pydantic | 业务规则、模型适配、任务编排与对外 API |
-| 数据访问 | SQLAlchemy、Alembic | 数据模型、事务和迁移 |
-| 数据库 | PostgreSQL、pgvector | 歌曲、画像、历史与语义向量 |
-| AI | 可配置聊天模型与 Embedding 模型 | 结构化建档、意图理解、向量检索与边界复核 |
-| QQ 音乐数据适配器 | Python、HTTP 客户端、Windows 凭据存储/DPAPI | 验证本机 Cookie、只读同步“我喜欢”、隔离私有接口变化 |
-| QQ 音乐网页连接器 | TypeScript、Chrome Extension Manifest V3 | 备用适配器；当前保留探测和公共协议，暂停实际播放开发 |
-| QQ 音乐 PC 连接器 | FastAPI、客户端命令入口、Windows 系统媒体能力 | 精确逐首点播、监视自然结束与客户端切歌、维护临时队列顺序 |
-| 后台任务 | 首期数据库任务表；达到触发条件后引入 Redis 与 Celery | 初始化、增量画像、重试和断点恢复 |
-| 测试 | pytest、Vitest、Playwright | 单元、集成、合约和端到端测试 |
-| 交付 | Docker Compose、GitHub Actions | 本地依赖、持续集成和可重复构建 |
-
-本项目不会一开始引入 MongoDB、NestJS、LangChain、LangGraph、MCP、Kubernetes 或微服务。新增基础设施必须通过架构决策记录说明收益、成本和退出方案。
-
-## 系统边界
-
-```mermaid
-flowchart LR
-    U["用户"] --> W["Next.js Web 应用"]
-    W -->|"REST 和 SSE"| A["FastAPI 服务"]
-    A --> D["PostgreSQL 和 pgvector"]
-    A --> M["云端模型服务"]
-    A --> S["外部歌曲检索服务"]
-    A -->|"只读同步；本机加密 Cookie"| QAPI["QQ 音乐内部接口"]
-    A <-->|"本机配对协议"| P["Windows PC 连接器"]
-    P <-->|"系统媒体能力 / 待验证适配"| QP["QQ 音乐 PC 客户端"]
-    A -.->|"备用协议"| E["QQ 音乐播放扩展"]
-    E -.->|"当前暂停"| Q["QQ 音乐网页版"]
-```
-
-QQ 密码永不进入 MoodMusic。用户手动提供的 Cookie 只保存在当前 Windows 用户可解密的操作系统凭据存储中，不进入业务数据库、Git、日志、前端持久化或模型请求；本机 API 默认只监听 `127.0.0.1`。模型 API Key 使用相同的凭据抽象，前端只显示登录状态和掩码信息。
-
-## 仓库结构
-
-```text
-mood-music/
-├─ apps/web/                         # Next.js Web 应用
-├─ services/api/                     # FastAPI 服务
-├─ extensions/qqmusic-web-connector/ # QQ 音乐网页版连接器
-├─ connectors/qqmusic-pc/            # Windows PC 连接器与只读探测器
-├─ packages/contracts/               # 跨模块契约与生成类型
-├─ infra/docker/                     # 本地基础设施配置
-├─ scripts/                          # 可重复执行的开发脚本
-├─ tests/e2e/                        # 跨应用端到端测试
-├─ docs/                             # 产品、架构、数据和质量基线
-├─ .env.example                      # 环境变量名称示例，不包含密钥
-└─ README.md                         # 产品入口与项目总览
-```
-
-完整文档索引见 [docs/INDEX.md](docs/INDEX.md)。发生冲突时，已接受的 ADR 优先于系统设计，系统设计优先于 PRD，PRD 优先于 README；代码不得在没有更新对应文档的情况下改变核心产品边界。
-
-## 版本目标
-
-首个可交付版本必须覆盖完整业务闭环，而不是只做界面演示：
-
-- Cookie 设置、登录状态验证、清除凭据、“喜欢”分页同步、去重、增量更新和失败恢复。
-- 多维画像、字段来源与置信度、人工锁定和模型版本追踪。
-- 自然语言查询、全量候选、均衡阈值、边界复核和合法 0 结果。
-- 三种排序、会话内追加要求、删除与拖动调整。
-- QQ 音乐 PC 连接器完成队列写入、播放控制、状态同步和结束后停止。
-- QQ 音乐网页扩展保留公共协议兼容性；实际播放待未来恢复开发。
-- 独立外部推荐、真实歌曲校验和明确的来源标记。
-- 搜索历史、临时队列历史和可恢复的队列清单导出。
-- API Key 与 QQ 音乐 Cookie 凭据保护、日志脱敏、权限最小化、恢复与卸载说明。
-- 自动化测试、人工听感评测和可重复构建。
-
-阶段计划与验收门槛见 [docs/roadmap/ROADMAP.md](docs/roadmap/ROADMAP.md)。
-
-## 开发约定
-
-- 产品文档和用户界面使用中文；代码标识符、接口字段和提交类型使用英文。
-- `main` 必须始终可运行；功能通过短生命周期分支开发。
-- 功能变更必须同时更新测试和文档，数据库变化必须使用 Alembic 迁移。
-- 不提交 `.env`、Cookie、Token、API Key、真实账号数据、版权音频或抓取到的播放地址。
-- QQ 音乐私有接口只能封装在可替换的只读适配器中，不得把 Cookie、签名或第三方原始响应扩散到核心业务；写操作和音频直链不属于首版边界。
-- 模型不得捏造未知的 BPM、语言、风格或版本；未知值保持为空并记录原因。
-
-具体规范见 [docs/development/DEVELOPMENT_GUIDE.md](docs/development/DEVELOPMENT_GUIDE.md) 和 [docs/development/CODING_STANDARDS.md](docs/development/CODING_STANDARDS.md)。
-
-## 运行说明
-
-推荐在 Windows PowerShell 中使用统一脚本。首次安装依赖：
+在 PowerShell 中依次运行：
 
 ```powershell
 .\scripts\setup.ps1
-```
-
-运行环境自检并启动完整模式。脚本会启动 PostgreSQL、执行迁移，并在后台启动 API 和 Web：
-
-```powershell
 .\scripts\doctor.ps1
 .\scripts\start.ps1
 ```
 
-结束使用后停止 MoodMusic 进程。PostgreSQL 容器和本地数据默认保留：
+然后打开 `http://127.0.0.1:5173`，按页面中的“同步曲库 → 模型设置 → 更新全部画像 → AI 选歌”完成配置。停止程序时运行：
 
 ```powershell
 .\scripts\stop.ps1
 ```
 
-浏览器打开 `http://localhost:5173`，按“同步曲库 → 模型设置 → 更新全部画像 → AI 选歌”的顺序即可运行完整链路。模型 API Key 通过页面提交到本机 API，并由独立的 Windows DPAPI 信封保护；不会进入 `.env`、数据库或浏览器持久化。
+完整模式可以只读同步当前账号的“我喜欢”，用模型建立歌曲画像并理解自然语言需求，再把确认后的队列交给本机 QQ 音乐客户端。QQ 音乐仍负责音频解码和播放，MoodMusic 不下载音频，也不获取受保护的音频地址。
 
-浏览器打开 `http://127.0.0.1:8000/docs`，按顺序执行：
+> 完整模式涉及 QQ 音乐 Cookie、模型服务和本机播放连接器，更适合项目展示或技术体验。只是想看看产品效果的同学，请直接使用上面的一键演示模式。
 
-1. `PUT /api/v1/credentials/qqmusic-cookie`：只在本机 Swagger 页面粘贴 Cookie。
-2. `POST /api/v1/providers/qqmusic-cookie/test`：验证登录状态。
-3. `POST /api/v1/library/sync-preview`：查看“我喜欢”第一页和总数，不写数据库。
-4. `POST /api/v1/library/sync`：读取全部分页并原子更新本地曲库；请求成功前不会替换最近一次完整状态。
-5. `GET /api/v1/library/songs`：分页查看数据库中当前有效的“喜欢”歌曲。
-6. `DELETE /api/v1/credentials/qqmusic-cookie`：需要时从本机 DPAPI 加密凭据存储清除 Cookie。
-7. `PUT /api/v1/credentials/deepseek` 与 `POST /api/v1/providers/deepseek/test`：保存并验证 DeepSeek 模型密钥。
-8. `POST /api/v1/profile-jobs`：用 DeepSeek 建立画像并用本地 BGE-M3 生成向量；通过 `GET /api/v1/jobs/{jobId}` 查看 checkpoint 进度。
-9. `POST /api/v1/search-sessions`：理解自然语言感觉，全量评分并返回已持久化的临时队列。
-10. `GET /api/v1/generated-playlists/{playlistId}`：重新读取临时队列快照。
-11. `POST /api/v1/playback/queues`：把快照交给本机 QQ 音乐并精确启动第一首；网页“临时队列”页已提供按钮。
-12. `POST /api/v1/playback/actions`：播放、暂停，或按当前 MoodMusic 队列切换上一首/下一首。
+## 隐私与安全
 
-`GET /api/v1/health` 检查 API 进程，`GET /api/v1/health/ready` 同时验证 PostgreSQL。Docker 数据保存在命名卷 `moodmusic_moodmusic-postgres-data`；普通 `docker compose down` 不会删除它。
+- MoodMusic 不需要、也不会保存你的 QQ 密码。
+- QQ 音乐 Cookie 和模型密钥由当前 Windows 用户的系统凭据保护，不写入 Git、数据库或浏览器持久化。
+- 本机服务默认只监听 `127.0.0.1`，不会主动暴露到局域网或互联网。
+- 主选歌结果只来自用户自己的“喜欢”列表；外部推荐不会偷偷混入。
+- 项目不修改 QQ 音乐安装文件，不绕过会员、地区、版权或 DRM 限制。
 
-不要把真实 Cookie 粘贴到终端、源码、`.env`、Issue、提交信息或聊天。完整开发检查使用：
+请不要把真实 Cookie 或 API Key 粘贴到源码、`.env`、终端命令、Issue、提交信息或聊天中。
+
+## 常见问题
+
+### 双击后提示没有 Node.js
+
+安装 [Node.js LTS](https://nodejs.org/en/download)，安装完成后关闭提示窗口，再双击启动文件。
+
+### 第一次启动为什么比较慢
+
+首次运行需要下载前端依赖，速度取决于网络。后续启动会直接使用已经安装好的组件。
+
+### 关闭浏览器后程序还在吗
+
+还在。双击 `Stop-MoodMusic.cmd` 才会停止本机演示服务。
+
+### 演示模式会影响我的 QQ 音乐吗
+
+不会。它使用虚构数据，不读取账号、不控制 QQ 音乐，也不产生模型费用。
+
+## 开发者入口
+
+普通试玩不需要阅读下面这些资料。希望了解实现、参与开发或提交改进时，可查看：
+
+- [贡献指南](CONTRIBUTING.md)
+- [开发环境与命令](docs/development/DEVELOPMENT_GUIDE.md)
+- [编码规范](docs/development/CODING_STANDARDS.md)
+- [完整文档索引](docs/INDEX.md)
+- [安全政策](SECURITY.md)
+- [项目路线图](docs/roadmap/ROADMAP.md)
+
+运行完整检查：
 
 ```powershell
 .\scripts\test.ps1
 ```
 
-## 分发边界
+## 开源许可与平台声明
 
-本项目依据 [MIT License](LICENSE) 开放源代码，允许自由使用、修改与再分发。它不包含 QQ 音乐二进制、商标资源或音频，也不代表、隶属于或获得腾讯及 QQ 音乐官方认可。使用者仍须自行遵守适用的平台条款、内容授权、隐私要求与法律法规；本项目不提供绕过会员、地区、版权或 DRM 限制的功能。
+MoodMusic 依据 [MIT License](LICENSE) 开放源代码，允许自由使用、修改与再分发。项目由 Tian Xuanhao（Chandler）开发，与腾讯或 QQ 音乐不存在隶属、赞助或官方认可关系。使用者仍须遵守适用的平台条款、内容授权、隐私要求和法律法规。
