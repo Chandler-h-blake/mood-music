@@ -22,6 +22,8 @@ __pycache__/
 venv/
 dist/
 build/
+!apps/web/build/
+!apps/web/build/**
 *.egg-info/
 
 # Test artifacts
