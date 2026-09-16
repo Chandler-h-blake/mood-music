@@ -18,7 +18,7 @@ MoodMusic 使用自然语言理解听歌需求，从用户自己的 QQ 音乐“
 
 ## 界面预览
 
-![MoodMusic 演示界面](docs/assets/moodmusic-demo.png)
+![MoodMusic 界面](docs/assets/moodmusic-demo.png)
 
 ## 核心功能
 
@@ -31,38 +31,9 @@ MoodMusic 使用自然语言理解听歌需求，从用户自己的 QQ 音乐“
 - 通过本机连接器控制 QQ 音乐桌面客户端播放确认后的队列。
 - 使用 Windows 凭据保护 QQ 音乐 Cookie 与模型密钥。
 
-## 快速体验
+## 安装与运行
 
-演示模式使用项目内置的虚构歌曲数据，不连接 QQ 音乐，也不调用模型服务。它适合快速浏览产品界面与主要交互。
-
-### 环境要求
-
-- Windows 10 或 Windows 11
-- Node.js 22.13 或更高版本，推荐使用 [Node.js LTS](https://nodejs.org/en/download)
-
-### 启动方式
-
-下载并解压项目后，双击：
-
-```text
-Start-MoodMusic-Demo.cmd
-```
-
-首次启动会自动安装前端依赖，完成后在浏览器中打开 `http://127.0.0.1:5173/?demo=1`。停止服务时双击：
-
-```text
-Stop-MoodMusic.cmd
-```
-
-也可以通过 PowerShell 启动：
-
-```powershell
-.\scripts\start-demo.ps1
-```
-
-## 完整模式
-
-完整模式会启动 Web 应用、API 服务和 PostgreSQL，支持同步真实曲库、建立歌曲画像、AI 选歌和本机播放控制。
+MoodMusic 会在本机启动 Web 应用、API 服务和 PostgreSQL，支持同步真实曲库、建立歌曲画像、AI 选歌和播放控制。
 
 ### 环境要求
 
@@ -72,8 +43,6 @@ Stop-MoodMusic.cmd
 - Docker Desktop
 - QQ 音乐桌面客户端
 - 可用的模型 API Key
-
-### 安装与启动
 
 ```powershell
 .\scripts\setup.ps1

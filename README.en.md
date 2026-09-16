@@ -12,23 +12,9 @@ Describe a feeling such as “driving alone after midnight, a little lonely but 
 
 [中文说明](README.md)
 
-## Try it without configuring the full project
-
-The interactive demo uses fictional bundled tracks. It needs no QQ Music account, model key, Python, Docker, or external model request.
-
-On Windows 10 or 11:
-
-1. Install [Node.js LTS](https://nodejs.org/en/download) if it is not already installed.
-2. Download and extract the repository ZIP.
-3. Double-click **`Start-MoodMusic-Demo.cmd`**. The first run downloads the demo components and then opens your browser automatically.
-
-Double-click **`Stop-MoodMusic.cmd`** when finished. Later launches reuse the installed components.
-
-PowerShell users can run `.\scripts\start-demo.ps1` instead.
-
 ## Interface preview
 
-![MoodMusic zero-configuration demo](docs/assets/moodmusic-demo.png)
+![MoodMusic interface](docs/assets/moodmusic-demo.png)
 
 ## What it does
 
