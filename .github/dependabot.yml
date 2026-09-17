@@ -3,18 +3,21 @@ updates:
   - package-ecosystem: npm
     directory: /apps/web
     schedule:
-      interval: weekly
-    groups:
-      web-dependencies:
-        patterns: ["*"]
+      interval: monthly
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /services/api
     schedule:
-      interval: weekly
-    groups:
-      api-dependencies:
-        patterns: ["*"]
+      interval: monthly
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 3

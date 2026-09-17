@@ -12,10 +12,6 @@ Describe a feeling such as “driving alone after midnight, a little lonely but 
 
 [中文说明](README.md)
 
-## Interface preview
-
-![MoodMusic interface](docs/assets/moodmusic-demo.png)
-
 ## What it does
 
 - Read-only synchronization of the current user's QQ Music liked library.
@@ -42,6 +38,15 @@ MoodMusic never asks for a QQ password, modifies the QQ Music installation, retr
 ## Run the complete local stack
 
 Requirements: Windows, PowerShell 7+, Python 3.12 or 3.13, Node.js 22.13+, Docker Desktop, and the QQ Music desktop client for real playback.
+
+Clone the repository and enter the project directory:
+
+```powershell
+git clone https://github.com/Chandler-h-blake/mood-music.git
+cd mood-music
+```
+
+Install dependencies, verify the environment, and start MoodMusic:
 
 ```powershell
 .\scripts\setup.ps1

@@ -16,10 +16,6 @@ MoodMusic 使用自然语言理解听歌需求，从用户自己的 QQ 音乐“
 
 [English README](README.en.md)
 
-## 界面预览
-
-![MoodMusic 界面](docs/assets/moodmusic-demo.png)
-
 ## 核心功能
 
 - 只读同步当前 QQ 音乐账号的“我喜欢”曲库。
@@ -43,6 +39,15 @@ MoodMusic 会在本机启动 Web 应用、API 服务和 PostgreSQL，支持同�
 - Docker Desktop
 - QQ 音乐桌面客户端
 - 可用的模型 API Key
+
+获取源码并进入项目目录：
+
+```powershell
+git clone https://github.com/Chandler-h-blake/mood-music.git
+cd mood-music
+```
+
+安装依赖、检查环境并启动：
 
 ```powershell
 .\scripts\setup.ps1
