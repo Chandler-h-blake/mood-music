@@ -99,6 +99,7 @@ class SongProfile(Base):
     profile: Mapped[dict] = mapped_column(JSONB)
     semantic_description: Mapped[str] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float)
+    manual_locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
@@ -122,6 +123,7 @@ class SongEmbedding(Base):
 
 class IndexJob(Base):
     __tablename__ = "index_jobs"
+    __table_args__ = (Index("ix_index_jobs_status_lease", "status", "lease_expires_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     job_type: Mapped[str] = mapped_column(String(32))
@@ -131,6 +133,8 @@ class IndexJob(Base):
     failed: Mapped[int] = mapped_column(Integer, default=0)
     checkpoint: Mapped[dict] = mapped_column(JSONB, default=dict)
     last_error: Mapped[str | None] = mapped_column(String(512))
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
@@ -145,6 +149,7 @@ class SearchSession(Base):
     description: Mapped[str] = mapped_column(Text)
     refinements: Mapped[list] = mapped_column(JSONB, default=list)
     structured_intent: Mapped[dict] = mapped_column(JSONB)
+    diagnostics: Mapped[dict | None] = mapped_column(JSONB)
     matching_policy: Mapped[str] = mapped_column(String(32), default="balanced")
     threshold: Mapped[float] = mapped_column(Float)
     candidate_set_hash: Mapped[str] = mapped_column(String(64))
@@ -168,11 +173,13 @@ class SearchCandidate(Base):
     passed: Mapped[bool] = mapped_column(Boolean)
     user_removed: Mapped[bool] = mapped_column(Boolean, default=False)
     exclusion_reason: Mapped[str | None] = mapped_column(String(256))
+    explanation: Mapped[dict | None] = mapped_column(JSONB)
     stable_order: Mapped[int] = mapped_column(Integer)
 
 
 class GeneratedPlaylist(Base):
     __tablename__ = "generated_playlists"
+    __table_args__ = (Index("ix_generated_playlists_created_at", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(

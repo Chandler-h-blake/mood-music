@@ -5,9 +5,11 @@ import math
 import random
 import secrets
 import uuid
+from collections import Counter
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .ai_client import DeepSeekModelClient, LocalEmbeddingClient
 from .database import Database
@@ -20,18 +22,23 @@ from .db_models import (
     Song,
     SongEmbedding,
     SongProfile,
+    utc_now,
 )
 from .library import LIKED_LIBRARY, LibraryDatabaseError
 from .models import (
     ArtistPreview,
+    CandidateExplanation,
     EmotionCurve,
     PlaylistHistoryPage,
     PlaylistSummary,
     QueueSong,
     QueueSortCreate,
+    RejectionSummary,
+    SearchDiagnostics,
     SearchIntent,
     TemporaryQueue,
 )
+from .profiles import profile_basis
 from .tag_normalizer import (
     apply_explicit_intent_rules,
     normalize_genres,
@@ -80,6 +87,8 @@ def score_profile(
         return 0.0, 0.0, 0.0, f"排除流派：{next(iter(overlap))}"
 
     vocal_mode = normalize_profile_vocal_mode(profile)
+    if vocal_mode is None and (intent.excludedVocalModes or intent.instrumentalAllowed is False):
+        return 0.0, 0.0, 0.0, "画像缺少人声类型，无法验证明确排除项"
     if intent.requiredVocalModes:
         if vocal_mode is None:
             return 0.0, 0.0, 0.0, "画像缺少人声类型，无法验证明确要求"
@@ -91,6 +100,8 @@ def score_profile(
         return 0.0, 0.0, 0.0, "明确要求有人声，排除纯音乐"
 
     language = normalize_language(profile.get("language"))
+    if language is None and intent.excludedLanguages:
+        return 0.0, 0.0, 0.0, "画像缺少语言，无法验证明确排除项"
     if intent.allowedLanguages:
         if language is None:
             return 0.0, 0.0, 0.0, "画像缺少语言，无法验证明确要求"
@@ -134,6 +145,51 @@ def score_profile(
     return score, semantic, feature, None
 
 
+def explain_profile(intent: SearchIntent, profile: SongProfile) -> CandidateExplanation:
+    data = profile.profile
+    reasons: list[str] = []
+    uncertainties: list[str] = []
+    if profile.model_provider != "manual":
+        uncertainties.append("画像来自有限元数据推断，未使用歌词或音频分析")
+    if profile.confidence < 0.6:
+        uncertainties.append("画像自评可信度较低，建议试听或人工校正")
+    for target, key, label in (
+        (intent.targetEnergy, "energy", "能量"),
+        (intent.targetValence, "valence", "情绪明亮度"),
+        (intent.targetDanceability, "danceability", "律动"),
+    ):
+        if target is not None:
+            actual = data.get(key)
+            if actual is None:
+                uncertainties.append(f"缺少{label}信息，该项未参与特征评分")
+            elif abs(target - actual) <= 0.2:
+                reasons.append(f"画像{label}接近需求（{actual:.2f} / 目标 {target:.2f}）")
+    if (
+        intent.allowedLanguages
+        and normalize_language(data.get("language")) in intent.allowedLanguages
+    ):
+        reasons.append("画像语言符合明确要求")
+    if intent.requiredVocalModes:
+        reasons.append(f"画像人声类型符合要求：{vocal_label(normalize_profile_vocal_mode(data))}")
+    for maximum, actual, label in (
+        (intent.maxEnergy, data.get("energy"), "能量"),
+        (intent.maxSadness, (data.get("emotions") or {}).get("sadness"), "悲伤强度"),
+        (intent.maxTension, (data.get("emotions") or {}).get("tension"), "紧张强度"),
+    ):
+        if maximum is not None and actual is not None and actual <= maximum:
+            reasons.append(f"画像{label}未超过明确上限（{actual:.2f} ≤ {maximum:.2f}）")
+    if not reasons:
+        reasons.append("主要根据需求与画像描述的语义相似度排序")
+    return CandidateExplanation(
+        profileVersion=profile.profile_version,
+        basis=profile_basis(profile),
+        confidence=profile.confidence,
+        summary=profile.semantic_description,
+        reasons=reasons,
+        uncertainties=uncertainties,
+    )
+
+
 class SemanticSearchService:
     def __init__(
         self,
@@ -152,6 +208,7 @@ class SemanticSearchService:
         *,
         parent_session_id: uuid.UUID | None = None,
         refinements: list[str] | None = None,
+        base_description: str | None = None,
     ) -> TemporaryQueue:
         intent = await self._model_client.understand_feeling(api_key, description)
         intent = apply_explicit_intent_rules(description, intent)
@@ -162,6 +219,7 @@ class SemanticSearchService:
             raise NoProfilesError("还没有可搜索的歌曲画像，请先运行画像任务。")
 
         evaluated: list[tuple[Song, float, float, float, str | None]] = []
+        explanations: dict[uuid.UUID, dict] = {}
         for song, profile, embedding in rows:
             vector = (
                 embedding.vector.tolist()
@@ -172,6 +230,7 @@ class SemanticSearchService:
                 intent, profile.profile, query_vector, vector
             )
             evaluated.append((song, score, semantic, feature, reason))
+            explanations[song.id] = explain_profile(intent, profile).model_dump(mode="json")
         passed = [row for row in evaluated if row[4] is None and row[1] >= intent.threshold]
         passed.sort(key=lambda row: (-row[1], row[0].source_track_id))
 
@@ -183,12 +242,38 @@ class SemanticSearchService:
         queue_songs: list[QueueSong] = []
         try:
             async with self._database.session_factory() as session, session.begin():
+                library_count = (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(LibraryMembership)
+                        .where(
+                            LibraryMembership.library == LIKED_LIBRARY,
+                            LibraryMembership.active.is_(True),
+                        )
+                    )
+                    or 0
+                )
+                rejection_counts = Counter(
+                    reason or "综合匹配分未达到阈值"
+                    for _, score, _, _, reason in evaluated
+                    if reason is not None or score < intent.threshold
+                )
+                diagnostics = SearchDiagnostics(
+                    libraryCount=library_count,
+                    profiledCount=len(rows),
+                    missingProfileCount=max(0, library_count - len(rows)),
+                    rejections=[
+                        RejectionSummary(reason=reason, count=count)
+                        for reason, count in rejection_counts.most_common()
+                    ],
+                )
                 search = SearchSession(
                     id=session_id,
                     parent_session_id=parent_session_id,
-                    description=description,
+                    description=base_description if base_description is not None else description,
                     refinements=refinements or [],
                     structured_intent=intent.model_dump(mode="json"),
+                    diagnostics=diagnostics.model_dump(mode="json"),
                     matching_policy="balanced",
                     threshold=intent.threshold,
                     candidate_set_hash=candidate_hash,
@@ -220,6 +305,7 @@ class SemanticSearchService:
                         if reason
                         else (None if song.id in passed_ids else "综合匹配度未达到阈值"),
                         stable_order=stable_order,
+                        explanation=explanations[song.id],
                     )
                     session.add(candidate)
                     await session.flush()
@@ -290,6 +376,12 @@ class SemanticSearchService:
                 score=round(candidate.score, 4),
                 semanticScore=round(candidate.semantic_score, 4),
                 featureScore=round(candidate.feature_score, 4),
+                durationMs=song.duration_ms,
+                explanation=(
+                    CandidateExplanation.model_validate(candidate.explanation)
+                    if candidate.explanation
+                    else None
+                ),
             )
             for _, candidate, song in rows
         ]
@@ -307,7 +399,28 @@ class SemanticSearchService:
             randomSeed=playlist.random_seed,
             curve=EmotionCurve.model_validate(playlist.curve) if playlist.curve else None,
             createdAt=playlist.created_at,
+            diagnostics=(
+                SearchDiagnostics.model_validate(search.diagnostics) if search.diagnostics else None
+            ),
         )
+
+    async def validate_playback_queue(self, queue: TemporaryQueue) -> None:
+        expected_ids = {song.songId for song in queue.songs}
+        try:
+            async with self._database.session_factory() as session:
+                active_ids = set(
+                    await session.scalars(
+                        select(LibraryMembership.song_id).where(
+                            LibraryMembership.song_id.in_(expected_ids),
+                            LibraryMembership.library == LIKED_LIBRARY,
+                            LibraryMembership.active.is_(True),
+                        )
+                    )
+                )
+        except (SQLAlchemyError, OSError) as exc:
+            raise LibraryDatabaseError("无法校验播放队列，请稍后重试。") from exc
+        if active_ids != expected_ids:
+            raise CandidateSetMismatchError("当前喜欢集合已变化，请重新选歌；历史记录已保留。")
 
     @staticmethod
     def _snapshot_hash(song_ids: list[uuid.UUID]) -> str:
@@ -319,17 +432,27 @@ class SemanticSearchService:
         try:
             async with self._database.session_factory() as session:
                 search = await session.get(SearchSession, session_id)
+                if search is None:
+                    raise SearchSessionNotFoundError("搜索会话不存在。")
+                root = search
+                visited = {root.id}
+                while root.parent_session_id is not None:
+                    parent = await session.get(SearchSession, root.parent_session_id)
+                    if parent is None or parent.id in visited:
+                        raise SearchSessionNotFoundError("原始搜索会话不存在或历史关系异常。")
+                    root = parent
+                    visited.add(root.id)
+                base_description = root.description
         except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取待追加要求的搜索会话。") from exc
-        if search is None:
-            raise SearchSessionNotFoundError("搜索会话不存在。")
         refinements = [*search.refinements, requirement]
-        combined = f"{search.description}\n追加要求：" + "；".join(refinements)
+        combined = f"{base_description}\n追加要求：" + "；".join(refinements)
         return await self.create_queue(
             api_key,
             combined,
             parent_session_id=search.id,
             refinements=refinements,
+            base_description=base_description,
         )
 
     async def sort_queue(
@@ -372,22 +495,24 @@ class SemanticSearchService:
     ) -> TemporaryQueue:
         try:
             async with self._database.session_factory() as session, session.begin():
-                candidate = await session.get(SearchCandidate, candidate_id, with_for_update=True)
-                if (
-                    candidate is None
-                    or candidate.session_id != session_id
-                    or not candidate.passed
-                    or candidate.user_removed
-                ):
-                    raise CandidateNotFoundError("候选歌曲不存在或已经移除。")
+                search = await session.get(SearchSession, session_id, with_for_update=True)
+                if search is None:
+                    raise SearchSessionNotFoundError("搜索会话不存在。")
+                rows = await self._candidate_rows(session, session_id)
+                candidate = next((row[0] for row in rows if row[0].id == candidate_id), None)
+                if candidate is None:
+                    raise CandidateNotFoundError("候选歌曲不存在、已经移除或画像不可用。")
                 candidate.user_removed = True
-        except CandidateNotFoundError:
-            raise
+                ordered = sorted(
+                    (row for row in rows if row[0].id != candidate_id),
+                    key=lambda row: (-row[0].score, row[1].source_track_id),
+                )
+                playlist_id = await self._write_playlist(
+                    session, search, ordered, sort_mode="match"
+                )
         except (SQLAlchemyError, OSError) as exc:
-            raise LibraryDatabaseError("无法移除候选歌曲。") from exc
-        return await self.sort_queue(
-            session_id, QueueSortCreate(mode="match"), refresh_candidate_hash=True
-        )
+            raise LibraryDatabaseError("无法移除候选歌曲，原队列已保留。") from exc
+        return await self._required_playlist(playlist_id)
 
     async def save_candidate_order(
         self, session_id: uuid.UUID, candidate_ids: list[uuid.UUID]
@@ -407,9 +532,7 @@ class SemanticSearchService:
             candidate_hash=search.candidate_set_hash,
         )
 
-    async def find_similar(
-        self, session_id: uuid.UUID, candidate_id: uuid.UUID
-    ) -> TemporaryQueue:
+    async def find_similar(self, session_id: uuid.UUID, candidate_id: uuid.UUID) -> TemporaryQueue:
         search, rows = await self._active_candidate_rows(session_id)
         target = next((row for row in rows if row[0].id == candidate_id), None)
         if target is None:
@@ -490,6 +613,9 @@ class SemanticSearchService:
                 playlist = await session.get(GeneratedPlaylist, playlist_id)
                 if playlist is None:
                     raise SearchSessionNotFoundError("历史队列快照不存在。")
+                search = await session.get(SearchSession, playlist.session_id, with_for_update=True)
+                if search is None:
+                    raise SearchSessionNotFoundError("搜索会话不存在。")
                 candidate_ids = list(
                     await session.scalars(
                         select(PlaylistItem.candidate_id)
@@ -497,26 +623,14 @@ class SemanticSearchService:
                         .order_by(PlaylistItem.position)
                     )
                 )
-                available_ids = set(
-                    await session.scalars(
-                        select(SearchCandidate.id)
-                        .join(SongProfile, SongProfile.song_id == SearchCandidate.song_id)
-                        .join(SongEmbedding, SongEmbedding.profile_id == SongProfile.id)
-                        .where(
-                            SearchCandidate.id.in_(candidate_ids),
-                            SongProfile.active.is_(True),
-                            SongEmbedding.model_id == self._embedding_client.embedding_model,
-                        )
-                    )
-                )
-                if set(candidate_ids) != available_ids:
-                    raise CandidateSetMismatchError(
-                        "历史候选所需的歌曲画像已发生变化，无法完整恢复。"
-                    )
+                rows = await self._candidate_rows(session, search.id, include_removed=True)
+                by_id = {row[0].id: row for row in rows}
+                if any(candidate_id not in by_id for candidate_id in candidate_ids):
+                    raise CandidateSetMismatchError("历史候选所需的画像不可用，原队列已保留。")
                 await session.execute(
                     update(SearchCandidate)
                     .where(
-                        SearchCandidate.session_id == playlist.session_id,
+                        SearchCandidate.session_id == search.id,
                         SearchCandidate.passed.is_(True),
                     )
                     .values(user_removed=True)
@@ -524,61 +638,62 @@ class SemanticSearchService:
                 if candidate_ids:
                     await session.execute(
                         update(SearchCandidate)
-                        .where(SearchCandidate.id.in_(candidate_ids))
+                        .where(
+                            SearchCandidate.id.in_(candidate_ids),
+                        )
                         .values(user_removed=False)
                     )
-                session_id = playlist.session_id
-                candidate_hash = playlist.candidate_set_hash
-        except (CandidateSetMismatchError, SearchSessionNotFoundError):
-            raise
+                restored_id = await self._write_playlist(
+                    session,
+                    search,
+                    [by_id[candidate_id] for candidate_id in candidate_ids],
+                    sort_mode="restored",
+                    manually_adjusted=True,
+                    candidate_hash=playlist.candidate_set_hash,
+                )
         except (SQLAlchemyError, OSError) as exc:
-            raise LibraryDatabaseError("无法恢复历史队列快照。") from exc
+            raise LibraryDatabaseError("无法恢复历史队列快照，原队列已保留。") from exc
+        return await self._required_playlist(restored_id)
 
-        search, rows = await self._active_candidate_rows(session_id)
-        by_id = {row[0].id: row for row in rows}
-        if set(candidate_ids) != set(by_id):
-            raise CandidateSetMismatchError("历史候选所需的歌曲画像已发生变化，无法完整恢复。")
-        ordered = [by_id[candidate_id] for candidate_id in candidate_ids]
-        return await self._persist_playlist(
-            search,
-            ordered,
-            sort_mode="restored",
-            manually_adjusted=True,
-            candidate_hash=candidate_hash,
+    async def _candidate_rows(
+        self,
+        session: AsyncSession,
+        session_id: uuid.UUID,
+        *,
+        include_removed: bool = False,
+    ) -> list[tuple[SearchCandidate, Song, SongProfile, SongEmbedding]]:
+        conditions = [
+            SearchCandidate.session_id == session_id,
+            SearchCandidate.passed.is_(True),
+            SongEmbedding.model_id == self._embedding_client.embedding_model,
+        ]
+        if not include_removed:
+            conditions.append(SearchCandidate.user_removed.is_(False))
+        return list(
+            (
+                await session.execute(
+                    select(SearchCandidate, Song, SongProfile, SongEmbedding)
+                    .join(Song, SearchCandidate.song_id == Song.id)
+                    .join(
+                        SongProfile, (SongProfile.song_id == Song.id) & SongProfile.active.is_(True)
+                    )
+                    .join(SongEmbedding, SongEmbedding.profile_id == SongProfile.id)
+                    .where(*conditions)
+                    .order_by(SearchCandidate.stable_order, SearchCandidate.id)
+                )
+            ).all()
         )
 
     async def _active_candidate_rows(
-        self, session_id: uuid.UUID
-    ) -> tuple[
-        SearchSession,
-        list[tuple[SearchCandidate, Song, SongProfile, SongEmbedding]],
-    ]:
+        self,
+        session_id: uuid.UUID,
+    ) -> tuple[SearchSession, list[tuple[SearchCandidate, Song, SongProfile, SongEmbedding]]]:
         try:
             async with self._database.session_factory() as session:
                 search = await session.get(SearchSession, session_id)
                 if search is None:
                     raise SearchSessionNotFoundError("搜索会话不存在。")
-                rows = list(
-                    (
-                        await session.execute(
-                            select(SearchCandidate, Song, SongProfile, SongEmbedding)
-                            .join(Song, SearchCandidate.song_id == Song.id)
-                            .join(
-                                SongProfile,
-                                (SongProfile.song_id == Song.id) & SongProfile.active.is_(True),
-                            )
-                            .join(SongEmbedding, SongEmbedding.profile_id == SongProfile.id)
-                            .where(
-                                SearchCandidate.session_id == session_id,
-                                SearchCandidate.passed.is_(True),
-                                SearchCandidate.user_removed.is_(False),
-                                SongEmbedding.model_id == self._embedding_client.embedding_model,
-                            )
-                        )
-                    ).all()
-                )
-        except SearchSessionNotFoundError:
-            raise
+                rows = await self._candidate_rows(session, session_id)
         except (SQLAlchemyError, OSError) as exc:
             raise LibraryDatabaseError("无法读取当前候选集合。") from exc
         return search, rows
@@ -594,46 +709,87 @@ class SemanticSearchService:
         manually_adjusted: bool = False,
         candidate_hash: str | None = None,
     ) -> TemporaryQueue:
-        playlist_id = uuid.uuid4()
-        song_ids = [song.id for _, song, _, _ in rows]
-        candidate_hash = candidate_hash or hashlib.sha256(
-            "|".join(sorted(str(song_id) for song_id in song_ids)).encode()
-        ).hexdigest()
         try:
             async with self._database.session_factory() as session, session.begin():
-                playlist = GeneratedPlaylist(
-                    id=playlist_id,
-                    session_id=search.id,
-                    name=SearchIntent.model_validate(search.structured_intent).summary[:256],
-                    candidate_set_hash=candidate_hash,
+                playlist_id = await self._write_playlist(
+                    session,
+                    search,
+                    rows,
                     sort_mode=sort_mode,
                     random_seed=random_seed,
                     curve=curve,
-                    snapshot_hash=self._snapshot_hash(song_ids),
+                    manually_adjusted=manually_adjusted,
+                    candidate_hash=candidate_hash,
                 )
-                session.add(playlist)
-                await session.flush()
-                session.add_all(
-                    [
-                        PlaylistItem(
-                            playlist_id=playlist_id,
-                            song_id=song.id,
-                            candidate_id=candidate.id,
-                            position=position,
-                            manually_adjusted=manually_adjusted,
-                        )
-                        for position, (candidate, song, _, _) in enumerate(rows)
-                    ]
-                )
-                stored_search = await session.get(SearchSession, search.id, with_for_update=True)
-                if stored_search is None:
-                    raise SearchSessionNotFoundError("搜索会话不存在。")
-                stored_search.candidate_set_hash = candidate_hash
-                stored_search.updated_at = func.now()
-        except SearchSessionNotFoundError:
-            raise
         except (SQLAlchemyError, OSError) as exc:
-            raise LibraryDatabaseError("无法保存新的队列快照。") from exc
+            raise LibraryDatabaseError("无法保存新的队列快照，原队列已保留。") from exc
+        return await self._required_playlist(playlist_id)
+
+    async def _write_playlist(
+        self,
+        session: AsyncSession,
+        search: SearchSession,
+        rows: list[tuple[SearchCandidate, Song, SongProfile, SongEmbedding]],
+        *,
+        sort_mode: str,
+        random_seed: int | None = None,
+        curve: dict | None = None,
+        manually_adjusted: bool = False,
+        candidate_hash: str | None = None,
+    ) -> uuid.UUID:
+        stored_search = await session.get(SearchSession, search.id, with_for_update=True)
+        if stored_search is None:
+            raise SearchSessionNotFoundError("搜索会话不存在。")
+        current_ids = set(
+            await session.scalars(
+                select(SearchCandidate.id).where(
+                    SearchCandidate.session_id == search.id,
+                    SearchCandidate.passed.is_(True),
+                    SearchCandidate.user_removed.is_(False),
+                )
+            )
+        )
+        row_ids = [candidate.id for candidate, *_ in rows]
+        if len(row_ids) != len(set(row_ids)) or set(row_ids) != current_ids:
+            raise CandidateSetMismatchError("候选集合已变化或画像不可用，请重新读取当前队列。")
+        song_ids = [song.id for _, song, _, _ in rows]
+        candidate_hash = (
+            candidate_hash
+            or hashlib.sha256(
+                "|".join(sorted(str(song_id) for song_id in song_ids)).encode()
+            ).hexdigest()
+        )
+        playlist_id = uuid.uuid4()
+        session.add(
+            GeneratedPlaylist(
+                id=playlist_id,
+                session_id=search.id,
+                name=SearchIntent.model_validate(search.structured_intent).summary[:256],
+                candidate_set_hash=candidate_hash,
+                sort_mode=sort_mode,
+                random_seed=random_seed,
+                curve=curve,
+                snapshot_hash=self._snapshot_hash(song_ids),
+            )
+        )
+        await session.flush()
+        session.add_all(
+            [
+                PlaylistItem(
+                    playlist_id=playlist_id,
+                    song_id=song.id,
+                    candidate_id=candidate.id,
+                    position=position,
+                    manually_adjusted=manually_adjusted,
+                )
+                for position, (candidate, song, _, _) in enumerate(rows)
+            ]
+        )
+        stored_search.candidate_set_hash = candidate_hash
+        stored_search.updated_at = utc_now()
+        return playlist_id
+
+    async def _required_playlist(self, playlist_id: uuid.UUID) -> TemporaryQueue:
         result = await self.get_playlist(playlist_id)
         if result is None:
             raise LibraryDatabaseError("队列快照保存后无法读取。")

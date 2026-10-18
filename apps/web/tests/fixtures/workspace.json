@@ -1,0 +1,154 @@
+{
+  "song": {
+    "id": "54b52efb-5280-49fc-b6b3-26632d19254a",
+    "sourceTrackId": "fictional-browser-0",
+    "title": "测试歌曲 0",
+    "artists": [
+      {
+        "name": "测试歌手"
+      }
+    ],
+    "album": "测试专辑",
+    "durationMs": 180000,
+    "firstSeenAt": "2026-10-18T17:08:26.675249Z",
+    "lastSeenAt": "2026-10-18T17:08:26.675249Z"
+  },
+  "profile": {
+    "songId": "54b52efb-5280-49fc-b6b3-26632d19254a",
+    "profileVersion": 1,
+    "profile": {
+      "sourceTrackId": "fictional-browser-0",
+      "identitySummary": "虚构歌曲",
+      "language": "zh",
+      "vocalType": "女声独唱",
+      "genres": ["流行"],
+      "energy": 0.3,
+      "valence": 0.6,
+      "danceability": 0.2,
+      "acousticness": null,
+      "emotions": {
+        "joy": 0.5,
+        "sadness": 0.2,
+        "loneliness": 0.2,
+        "warmth": 0.6,
+        "hope": 0.6,
+        "tension": 0.1,
+        "calm": 0.7
+      },
+      "scenes": ["夜晚"],
+      "themes": [],
+      "arrangement": [],
+      "semanticDescription": "安静温暖的虚构歌曲",
+      "confidence": 0.4
+    },
+    "locked": false,
+    "basis": "模型根据歌名、歌手、专辑和时长推断，未分析歌词或音频",
+    "model": "test-model",
+    "createdAt": "2026-10-18T17:08:26.675249Z"
+  },
+  "queue": {
+    "sessionId": "918682e9-52f8-4868-998b-01241952a7c6",
+    "playlistId": "7f5da62a-4229-4e3f-862e-e45875e5bc06",
+    "name": "安静温暖",
+    "description": "安静温暖",
+    "intent": {
+      "summary": "安静温暖",
+      "semanticQuery": "安静温暖的音乐",
+      "scenes": ["夜晚"],
+      "exclusions": [],
+      "excludedGenres": [],
+      "requiredVocalModes": [],
+      "excludedVocalModes": [],
+      "allowedLanguages": [],
+      "excludedLanguages": [],
+      "instrumentalAllowed": null,
+      "targetEnergy": 0.3,
+      "maxEnergy": null,
+      "targetValence": 0.6,
+      "targetDanceability": null,
+      "maxSadness": null,
+      "maxTension": null,
+      "threshold": 0.75
+    },
+    "candidateSetHash": "test",
+    "evaluatedCount": 1,
+    "matchedCount": 1,
+    "songs": [
+      {
+        "candidateId": "9267b555-0623-4a26-a924-c18686677050",
+        "songId": "54b52efb-5280-49fc-b6b3-26632d19254a",
+        "sourceTrackId": "fictional-browser-0",
+        "title": "测试歌曲 0",
+        "artists": [
+          {
+            "name": "测试歌手"
+          }
+        ],
+        "album": "测试专辑",
+        "score": 0.98,
+        "semanticScore": 1.0,
+        "featureScore": 0.93,
+        "durationMs": 180000,
+        "explanation": {
+          "profileVersion": 1,
+          "basis": "模型根据歌名、歌手、专辑和时长推断，未分析歌词或音频",
+          "confidence": 0.4,
+          "summary": "安静温暖的虚构歌曲",
+          "reasons": [
+            "画像能量接近需求（0.30 / 目标 0.30）",
+            "画像情绪明亮度接近需求（0.60 / 目标 0.60）"
+          ],
+          "uncertainties": [
+            "画像来自有限元数据推断，未使用歌词或音频分析",
+            "画像自评可信度较低，建议试听或人工校正"
+          ]
+        }
+      }
+    ],
+    "sortMode": "match",
+    "randomSeed": null,
+    "curve": null,
+    "createdAt": null,
+    "diagnostics": {
+      "libraryCount": 3,
+      "profiledCount": 1,
+      "missingProfileCount": 2,
+      "rejections": [],
+      "scoreNote": "匹配分是排序依据，不代表准确率；画像可信度来自模型自评或人工判断。"
+    }
+  },
+  "job": {
+    "jobId": "5b079217-7221-4d79-b680-cda743e955e3",
+    "status": "failed",
+    "total": 3,
+    "completed": 1,
+    "failed": 0,
+    "lastError": "画像任务中断，请重试。"
+  },
+  "settings": {
+    "chatProvider": "test",
+    "chatModel": "test-model",
+    "embeddingProvider": "local",
+    "embeddingModel": "test-embedding",
+    "embeddingDimensions": 1024,
+    "apiKeyConfigured": false
+  },
+  "credential": {
+    "configured": false,
+    "valid": null,
+    "maskedAccount": null,
+    "message": "尚未配置"
+  },
+  "sync": {
+    "runId": "f08e00f8-3524-4c61-b0fa-e6fe1d449eb3",
+    "status": "succeeded",
+    "pagesFetched": 1,
+    "reportedTotal": 3,
+    "fetchedCount": 3,
+    "uniqueCount": 3,
+    "insertedCount": 3,
+    "updatedCount": 0,
+    "deactivatedCount": 0,
+    "skippedMissingId": 0
+  }
+}

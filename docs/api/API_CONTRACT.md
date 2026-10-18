@@ -91,7 +91,19 @@ MoodMusic 的 Web、API、后台 worker 和浏览器扩展只能通过版本化�
 
 ### 画像任务
 
-当前实现以 `incremental` 为默认模式，按环境变量 `PROFILE_BATCH_SIZE` 分批持久化；每个成功批次更新 checkpoint。`rebuild` 会追加画像版本，不原地覆盖旧版本。当前进程内执行器支持失败后重试，暂停、取消、SSE 与进程启动时自动恢复留在后续任务生命周期迭代。
+当前实现以 `incremental` 为默认模式，按环境变量 `PROFILE_BATCH_SIZE` 分批持久化。API 仅入队，独立 worker 通过租约领取，按歌曲 ID 更新 checkpoint；过期 running 任务可被接管，旧 worker 不得继续写入。`rebuild` 追加画像版本且保留人工锁定画像。暂停、取消和 SSE 仍为规划接口，当前 UI 用短轮询恢复进度。
+
+已实现 `GET /api/v1/profile-jobs/latest`，返回最近活动任务的 `JobStatus`，没有任务返回 `null`，无需模型凭据。`retry` 接受 failed 或 succeeded 且存在失败歌曲的任务，保留成功歌曲并重置跳过项；同一时间只允许一个排队或执行中的画像任务。
+
+2026-10-19 补齐的界面与响应：
+
+- `GET /api/v1/credentials/qqmusic-cookie` 仅返回 configured/valid/message 等去敏状态，不返回 Cookie，也不自动访问 QQ 音乐。连接验证、替换和清除沿用原凭据接口。
+- `GET /api/v1/library/songs/{songId}/profile` 返回当前画像、版本、来源说明、模型与整份画像锁定状态；尚无画像返回 null，歌曲不存在返回 404。
+- `PUT /api/v1/library/songs/{songId}/profile` 接受 `{profile, expectedVersion, locked}`；保存新的人工画像版本并重算本地向量，版本冲突返回 409。向量生成或事务失败保留原版本。首轮采用整份画像锁定，前述字段级 overrides 接口仍为规划。
+- 队列歌曲增加可选 `explanation`，保存当时画像版本、依据、自评可信度、匹配原因和不确定项；旧历史缺少解释时返回 null，不追补当前画像冒充历史依据。
+- 队列增加可选 `diagnostics`，保存搜索时曲库总量、可用画像覆盖与排除原因计数；人工删除不计入搜索排除统计。匹配分不是准确率，不自动放宽明确条件。
+
+同日复核补充：删除/恢复集合与新快照在同一事务提交，保存失败回滚全部修改。写入快照时锁定搜索会话并校验当前候选 ID，过期集合统一返回 `409 candidate.setChanged`。连续追加使用原始描述与累计条件各一次。播放提交前再次校验当前喜欢集合，已取消喜欢的历史歌曲不会直接进入新播放；历史快照继续保留。
 
 - `POST /api/v1/profile-jobs`：创建初始化或增量画像任务。
 - `GET /api/v1/jobs/{jobId}`：读取状态、进度和失败分类。

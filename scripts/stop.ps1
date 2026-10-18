@@ -2,7 +2,7 @@
 param()
 
 $runDir = Join-Path (Split-Path -Parent $PSScriptRoot) ".run"
-foreach ($name in "api", "web") {
+foreach ($name in "worker", "api", "web") {
     $pidFile = Join-Path $runDir "$name.pid"
     if (-not (Test-Path -LiteralPath $pidFile)) { continue }
     $processId = [int](Get-Content -LiteralPath $pidFile -Raw)

@@ -32,7 +32,46 @@ jobs:
       - name: Verify generated connector schema
         run: |
           python packages/contracts/generate_connector_schema.py
+          python packages/contracts/generate_web_types.py
           git diff --exit-code
+
+  api-postgres:
+    name: API · PostgreSQL recovery
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: moodmusic_test
+          POSTGRES_USER: moodmusic
+          POSTGRES_PASSWORD: moodmusic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U moodmusic -d moodmusic_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://moodmusic:moodmusic@127.0.0.1:5432/moodmusic_test
+      MOODMUSIC_TEST_DATABASE_URL: postgresql+asyncpg://moodmusic:moodmusic@127.0.0.1:5432/moodmusic_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e "./services/api[dev]"
+      - name: Migrate empty database
+        working-directory: services/api
+        run: python -m alembic upgrade head
+      - name: Test recovery and profile governance
+        working-directory: services/api
+        run: python -m pytest tests/test_profile_integration.py
+      - name: Verify previous-version upgrade and schema
+        working-directory: services/api
+        run: |
+          python -m alembic downgrade 20260912_0003
+          python -m alembic upgrade head
+          python -m alembic check
 
   web:
     name: Web · Node 22
@@ -50,5 +89,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org

@@ -130,6 +130,14 @@ Playwright 与本地 fake QQ 页面覆盖：
 - 50 次冷启动和不少于 8 小时播放状态跟踪。
 - 连接器多次断线重连不重复提交队列。
 
+### 6.1 本地 PostgreSQL 回归入口（2026-10-19）
+
+新增 `test_profile_integration.py` 验证并发任务提交、租约过期接管、旧执行器写入保护、人工版本冲突、锁定重建、向量失败保留原画像、历史解释及零结果统计。默认跳过；显式设置 `MOODMUSIC_TEST_DATABASE_URL` 为数据库名 `moodmusic_test` 的独立测试库后运行。测试为每个案例创建并清理独立 schema，禁止指向个人业务库。CI 的 PostgreSQL job 使用临时 service，先从空库迁移，再运行回归，并检查上一版本降级/升级与 schema 一致性。
+
+浏览器验收覆盖：刷新后读取最新任务、Cookie/Key 配置与清空、任务重试、快速搜索旧响应取消、人工画像保存与默认锁定、推荐解释弹窗及手机布局。使用虚构数据和拦截响应，不读取真实系统凭据、不访问 QQ 账号或产生模型费用。这些行为检查不代替真实曲库人工准确率评测、长时间播放或 50 次冷启动门槛。
+
+持久化浏览器回归在 `apps/web/tests/workspace.spec.ts`，运行 `npm run test:e2e`。首次运行可通过 `npx playwright install chromium` 安装浏览器；Windows 也可设置 `$env:PLAYWRIGHT_CHANNEL='msedge'` 使用已安装的 Edge。测试自行启动 Web，拦截所有域名上的 `/api/v1/` 请求，不依赖真实 API。CI 安装 Chromium 后执行此套测试。新增数据库故障注入覆盖删除/恢复回滚、过期排序拒绝、连续追加与喜欢成员校验；PC 播放测试覆盖命令失败回滚及同名不同歌手识别。
+
 ## 7 发布质量门
 
 首版发布需要：

@@ -28,6 +28,7 @@
 - [ADR 004 双播放连接器路线](architecture/ADR-004-dual-qqmusic-playback-connectors.md)：Chrome 网页连接器与 Windows PC 连接器如何共享协议及安全边界。
 - [ADR 005 QQ 音乐 PC COM 自动化评估](architecture/ADR-005-qqmusic-pc-com-automation.md)：为何注册的遗留 COM 服务不能作为现代客户端播放路线。
 - [ADR 006 QQ 音乐 PC 命令入口](architecture/ADR-006-qqmusic-pc-command-entrypoint.md)：如何通过客户端自身命令精确点播，并由后端维护临时队列顺序。
+- [ADR 007 画像任务恢复](architecture/ADR-007-profile-worker-recovery.md)：独立 worker、租约接管、歌曲级 checkpoint 与旧执行器写入保护。
 
 ## 数据与接口
 

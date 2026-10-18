@@ -114,6 +114,22 @@ class SongProfileBatch(BaseModel):
     profiles: list[SongProfileData]
 
 
+class SongProfileView(BaseModel):
+    songId: UUID
+    profileVersion: int
+    profile: SongProfileData
+    locked: bool
+    basis: str
+    model: str
+    createdAt: datetime
+
+
+class ManualProfileUpdate(BaseModel):
+    profile: SongProfileData
+    expectedVersion: int = Field(ge=1)
+    locked: bool = True
+
+
 LanguageCode = Literal["zh", "yue", "en", "ja", "ko", "es", "fr", "de", "ru", "other"]
 VocalMode = Literal[
     "male_solo",
@@ -198,6 +214,30 @@ class QueueSong(BaseModel):
     score: float
     semanticScore: float
     featureScore: float
+    durationMs: int | None = None
+    explanation: CandidateExplanation | None = None
+
+
+class CandidateExplanation(BaseModel):
+    profileVersion: int
+    basis: str
+    confidence: float = Field(ge=0, le=1)
+    summary: str
+    reasons: list[str]
+    uncertainties: list[str]
+
+
+class RejectionSummary(BaseModel):
+    reason: str
+    count: int
+
+
+class SearchDiagnostics(BaseModel):
+    libraryCount: int
+    profiledCount: int
+    missingProfileCount: int
+    rejections: list[RejectionSummary]
+    scoreNote: str = "匹配分是排序依据，不代表准确率；画像可信度来自模型自评或人工判断。"
 
 
 class TemporaryQueue(BaseModel):
@@ -214,6 +254,7 @@ class TemporaryQueue(BaseModel):
     randomSeed: int | None = None
     curve: EmotionCurve | None = None
     createdAt: datetime | None = None
+    diagnostics: SearchDiagnostics | None = None
 
 
 class PlaylistSummary(BaseModel):

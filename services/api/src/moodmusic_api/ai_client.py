@@ -62,7 +62,7 @@ class DeepSeekModelClient:
                 "‘男女对唱’必须设 requiredVocalModes=['mixed_duet'] 且 instrumentalAllowed=false。"
                 "明确语言要求写入 allowedLanguages，明确不要的语言写入 excludedLanguages，使用 zh、"
                 "yue、en、ja、ko、es、fr、de、ru、other。粤语使用 yue，普通话或泛华语使用 zh。"
-                "balanced 默认 threshold 取 0.75，需求宽泛时不低于 0.72，"
+                "balanced 默认 threshold 取 0.75，需求宽泛时也不低于 0.75，"
                 "严格复合需求时可提高到 0.78。"
             ),
             input_text=description,

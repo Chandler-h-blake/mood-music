@@ -1,3 +1,6 @@
+import type { SongProfileView } from "./api-types";
+import { ManualProfileUpdateSchema } from "./api-schemas";
+
 export const DEMO_BUILD_ENABLED = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 type DemoSong = {
@@ -7,6 +10,8 @@ type DemoSong = {
   artists: { name: string }[];
   album: string;
   durationMs: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
 };
 
 type DemoQueueSong = DemoSong & {
@@ -37,6 +42,8 @@ const songs: DemoSong[] = [
   artists: [{ name: String(artist) }],
   album: String(album),
   durationMs: Number(duration),
+  firstSeenAt: "2026-09-15T00:00:00Z",
+  lastSeenAt: "2026-09-15T00:00:00Z",
 }));
 
 export const demoLibraryPage = { page: 0, pageSize: 50, total: songs.length, songs };
@@ -53,6 +60,8 @@ let queueSongs: DemoQueueSong[] = songs.slice(0, 8).map((song, index) => ({
 let sortMode = "match";
 let playbackIndex = 0;
 let playbackStatus: "playing" | "paused" | "stopped" = "stopped";
+let cookieConfigured = true;
+const demoProfiles = new Map<string, SongProfileView>();
 
 export function isDemoMode() {
   if (DEMO_BUILD_ENABLED) return true;
@@ -110,8 +119,32 @@ export async function demoApi<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (url.pathname === "/api/v1/library/sync" && method === "POST") return result<T>({ uniqueCount: songs.length });
   if (url.pathname === "/api/v1/settings") return result<T>(demoSettings);
-  if (url.pathname.startsWith("/api/v1/credentials/") || url.pathname.startsWith("/api/v1/providers/")) return result<T>({ status: "ok" });
-  if (url.pathname === "/api/v1/profile-jobs" || url.pathname.includes("/retry") || url.pathname.startsWith("/api/v1/jobs/")) return result<T>({ jobId: "demo-job", status: "succeeded", total: songs.length, completed: songs.length, failed: 0, lastError: null });
+  if (url.pathname.startsWith("/api/v1/credentials/") || url.pathname.startsWith("/api/v1/providers/")) {
+    const isCookie = url.pathname.includes("qqmusic-cookie");
+    if (url.pathname.startsWith("/api/v1/credentials/") && method !== "GET") {
+      if (isCookie) cookieConfigured = method !== "DELETE";
+      else demoSettings.apiKeyConfigured = method !== "DELETE";
+    }
+    const configured = isCookie ? cookieConfigured : demoSettings.apiKeyConfigured;
+    return result<T>({ configured, valid: url.pathname.endsWith("/test") ? configured : null, maskedAccount: isCookie && configured ? "演示账号" : null, message: "演示模式：连接状态为模拟数据，未保存真实凭据" });
+  }
+  const profileMatch = url.pathname.match(/^\/api\/v1\/library\/songs\/([^/]+)\/profile$/);
+  if (profileMatch) {
+    const song = songs.find((item) => item.id === profileMatch[1]);
+    if (!song) throw new Error("演示歌曲不存在");
+    let profile = demoProfiles.get(song.id) ?? {
+      songId: song.id, profileVersion: 1, locked: false, basis: "虚构演示画像，未进行真实分析", model: "demo", createdAt: "2026-09-15T00:00:00Z",
+      profile: { sourceTrackId: song.sourceTrackId, identitySummary: `${song.title} · 演示数据`, language: "zh", vocalType: null, genres: ["流行"], energy: 0.3, valence: 0.5, danceability: null, acousticness: null, emotions: { joy: null, sadness: null, loneliness: null, warmth: null, hope: null, tension: null, calm: null }, scenes: ["夜晚"], themes: [], arrangement: [], semanticDescription: "虚构演示歌曲，用于体验画像校正界面。", confidence: 0.3 },
+    };
+    if (method === "PUT") {
+      const update = ManualProfileUpdateSchema.parse(body);
+      if (update.expectedVersion !== profile.profileVersion) throw new Error("画像已更新，请重新读取");
+      profile = { ...profile, profileVersion: profile.profileVersion + 1, profile: update.profile, locked: update.locked, basis: "演示模式下的人工校正，仅保存在当前演示内存", model: "user" };
+      demoProfiles.set(song.id, profile);
+    }
+    return result<T>(profile);
+  }
+  if (url.pathname === "/api/v1/profile-jobs" || url.pathname === "/api/v1/profile-jobs/latest" || url.pathname.includes("/retry") || url.pathname.startsWith("/api/v1/jobs/")) return result<T>({ jobId: "demo-job", status: "succeeded", total: songs.length, completed: songs.length, failed: 0, lastError: null });
   if (url.pathname === "/api/v1/search-sessions" && method === "POST") return result<T>(queue(String(body.description ?? "演示队列")));
   if (url.pathname === "/api/v1/generated-playlists/demo-history/restore") {
     sortMode = "restored";

@@ -157,8 +157,7 @@ async def test_unexpected_native_song_restores_current_managed_song(
     selected = queue()
     service._playlist_id = selected.playlistId
     service._songs = [
-        service._resolve_song(song, index + 100)
-        for index, song in enumerate(selected.songs)
+        service._resolve_song(song, index + 100) for index, song in enumerate(selected.songs)
     ]
     service._queue_active = True
     service._current_observed = True
@@ -183,8 +182,7 @@ async def test_pause_does_not_advance_managed_queue() -> None:
     selected = queue()
     service._playlist_id = selected.playlistId
     service._songs = [
-        service._resolve_song(song, index + 100)
-        for index, song in enumerate(selected.songs)
+        service._resolve_song(song, index + 100) for index, song in enumerate(selected.songs)
     ]
     service._queue_active = True
     service._current_observed = True
@@ -230,8 +228,7 @@ async def test_near_end_advances_before_native_queue_starts(
     selected = queue()
     service._playlist_id = selected.playlistId
     service._songs = [
-        service._resolve_song(song, index + 100)
-        for index, song in enumerate(selected.songs)
+        service._resolve_song(song, index + 100) for index, song in enumerate(selected.songs)
     ]
     service._queue_active = True
     service._current_observed = True
@@ -264,8 +261,7 @@ async def test_stale_monitor_state_does_not_skip_after_explicit_next(
     selected = queue()
     service._playlist_id = selected.playlistId
     service._songs = [
-        service._resolve_song(song, index + 100)
-        for index, song in enumerate(selected.songs)
+        service._resolve_song(song, index + 100) for index, song in enumerate(selected.songs)
     ]
     service._queue_active = True
     service._current_observed = True
@@ -300,8 +296,7 @@ async def test_observation_taken_during_explicit_next_cannot_stop_or_skip_queue(
     selected = queue()
     service._playlist_id = selected.playlistId
     service._songs = [
-        service._resolve_song(song, index + 100)
-        for index, song in enumerate(selected.songs)
+        service._resolve_song(song, index + 100) for index, song in enumerate(selected.songs)
     ]
     service._queue_active = True
     service._current_observed = True
@@ -333,14 +328,21 @@ async def test_observation_taken_during_explicit_next_cannot_stop_or_skip_queue(
 @pytest.mark.asyncio
 async def test_playback_queue_http_endpoint_uses_persisted_snapshot() -> None:
     selected_queue = queue()
+    validated = False
 
     class FakeSearch:
         async def get_playlist(self, playlist_id: object) -> TemporaryQueue | None:
             assert playlist_id == selected_queue.playlistId
             return selected_queue
 
+        async def validate_playback_queue(self, value: TemporaryQueue) -> None:
+            nonlocal validated
+            assert value is selected_queue
+            validated = True
+
     class FakePC:
         async def start_queue(self, value: TemporaryQueue) -> PCPlaybackQueueResult:
+            assert validated
             assert value is selected_queue
             first = value.songs[0]
             return PCPlaybackQueueResult(
@@ -368,3 +370,69 @@ async def test_playback_queue_http_endpoint_uses_persisted_snapshot() -> None:
     assert response.status_code == 200
     assert response.json()["title"] == "第一首"
     assert response.json()["acceptedCount"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["replace", "next", "natural-next"])
+async def test_failed_play_command_preserves_managed_queue_and_current_position(
+    monkeypatch, operation
+):
+    from unittest.mock import AsyncMock
+
+    service = QQMusicPCService(FakeCatalog(), FakeMedia(), auto_monitor=False)
+    monkeypatch.setattr(service, "_play_current", AsyncMock(return_value=True))
+    original = queue()
+    await service.start_queue(original)
+    before = (service._playlist_id, service._songs, service._current_index, service._queue_active)
+    monkeypatch.setattr(
+        service, "_play_current", AsyncMock(side_effect=QQMusicPCError("模拟启动失败"))
+    )
+    with pytest.raises(QQMusicPCError):
+        if operation == "replace":
+            await service.start_queue(queue())
+        elif operation == "next":
+            await service.control("next")
+        else:
+            await service._advance_or_finish("stopped")
+    assert (
+        service._playlist_id,
+        service._songs,
+        service._current_index,
+        service._queue_active,
+    ) == before
+
+
+@pytest.mark.asyncio
+async def test_play_command_does_not_confirm_same_title_from_another_artist(tmp_path, monkeypatch):
+    class WrongArtistMedia:
+        async def get_state(self):
+            return PCPlaybackState(
+                status="playing", title="第一首", artist="另一位歌手", message="ok"
+            )
+
+    service = QQMusicPCService(FakeCatalog(), WrongArtistMedia(), auto_monitor=False)
+    executable = tmp_path / "QQMusic.exe"
+    executable.touch()
+    monkeypatch.setattr(service, "_find_executable", lambda: executable)
+    monkeypatch.setattr(
+        "moodmusic_api.qqmusic_pc.subprocess.Popen", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr("moodmusic_api.qqmusic_pc.asyncio.sleep", lambda _: _done())
+    result = await service.start_queue(queue())
+    assert not result.observed
+    assert result.status == "acceptedUnconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_monitor_does_not_adopt_same_title_from_wrong_artist(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    service = QQMusicPCService(FakeCatalog(), FakeMedia(), auto_monitor=False)
+    monkeypatch.setattr(service, "_play_current", AsyncMock(return_value=True))
+    await service.start_queue(queue())
+    service._ignore_mismatch_until = 0
+    service._natural_transition_armed = True
+    wrong = PCPlaybackState(status="playing", title="第二首", artist="另一位歌手", message="ok")
+    await service._reconcile_player_state(wrong)
+    assert service._current_index == 1
+    assert service._play_current.await_count == 2

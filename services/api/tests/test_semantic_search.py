@@ -9,7 +9,7 @@ from moodmusic_api.ai_client import (
     InvalidModelResponseError,
     LocalEmbeddingClient,
 )
-from moodmusic_api.db_models import Song
+from moodmusic_api.db_models import Song, SongProfile
 from moodmusic_api.models import (
     EmotionCurve,
     EmotionValues,
@@ -18,7 +18,12 @@ from moodmusic_api.models import (
     SongProfileData,
 )
 from moodmusic_api.profiles import ProfileService
-from moodmusic_api.semantic_search import SemanticSearchService, cosine_similarity, score_profile
+from moodmusic_api.semantic_search import (
+    SemanticSearchService,
+    cosine_similarity,
+    explain_profile,
+    score_profile,
+)
 from moodmusic_api.tag_normalizer import (
     apply_explicit_intent_rules,
     normalize_genres,
@@ -56,6 +61,41 @@ def test_cosine_similarity_handles_exact_and_empty_vectors() -> None:
     assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert cosine_similarity([], []) == 0.0
     assert cosine_similarity([1.0], [1.0, 2.0]) == 0.0
+
+
+@pytest.mark.parametrize(
+    "requirements, field",
+    [
+        ({"excludedLanguages": ["en"]}, "language"),
+        ({"excludedVocalModes": ["male_solo"]}, "vocalType"),
+        ({"instrumentalAllowed": False}, "vocalType"),
+    ],
+)
+def test_missing_evidence_cannot_bypass_an_explicit_negative_requirement(requirements, field):
+    profile = {field: None}
+    score, _, _, reason = score_profile(intent(**requirements), profile, [1.0], [1.0])
+    assert score == 0
+    assert "缺少" in reason
+
+
+def test_explanation_exposes_unknown_features_and_low_confidence_without_inventing_matches():
+    profile = SongProfile(
+        profile_version=3,
+        model_provider="deepseek",
+        confidence=0.3,
+        semantic_description="信息有限的虚构歌曲",
+        profile={"energy": None, "valence": None},
+    )
+    explanation = explain_profile(intent(), profile)
+    assert explanation.profileVersion == 3
+    assert any("缺少能量" in value for value in explanation.uncertainties)
+    assert any("较低" in value for value in explanation.uncertainties)
+    assert not any("能量接近" in value for value in explanation.reasons)
+    snapshot = explanation.model_dump()
+    profile.confidence = 0.9
+    profile.semantic_description = "后来人工修正的描述"
+    assert snapshot["confidence"] == 0.3
+    assert snapshot["summary"] == "信息有限的虚构歌曲"
 
 
 def test_provider_error_message_is_safely_extracted() -> None:

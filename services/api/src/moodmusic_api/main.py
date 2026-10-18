@@ -5,8 +5,9 @@ from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from .ai_client import (
@@ -38,6 +39,7 @@ from .models import (
     LibrarySongPage,
     LibrarySyncResult,
     LikedPagePreview,
+    ManualProfileUpdate,
     ModelApiKeyInput,
     ModelSettings,
     PCPlaybackActionInput,
@@ -51,9 +53,16 @@ from .models import (
     QueueSortCreate,
     SearchRefinementCreate,
     SearchSessionCreate,
+    SongProfileView,
     TemporaryQueue,
 )
-from .profiles import ProfileJobConflictError, ProfileJobNotFoundError, ProfileService
+from .profiles import (
+    ProfileJobConflictError,
+    ProfileJobNotFoundError,
+    ProfileService,
+    SongProfileConflictError,
+    SongProfileNotFoundError,
+)
 from .qqmusic import QQMusicAuthenticationError, QQMusicClient, QQMusicRequestError
 from .qqmusic_pc import QQMusicPCError, QQMusicPCService
 from .semantic_search import (
@@ -162,6 +171,18 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Local-only API for MoodMusic",
     )
+
+    @app.exception_handler(CandidateSetMismatchError)
+    async def candidate_set_changed(
+        _request: Request, exc: CandidateSetMismatchError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {"code": "candidate.setChanged", "message": str(exc)},
+            },
+        )
+
     configured_origins = os.environ.get(
         "WEB_ORIGIN",
         "http://127.0.0.1:5173,http://localhost:5173",
@@ -219,7 +240,6 @@ def create_app() -> FastAPI:
                 status_code=503,
                 detail={"code": "playback.controlFailed", "message": str(exc)},
             ) from exc
-
 
     @app.get("/api/v1/settings", response_model=ModelSettings)
     async def settings_view(
@@ -335,6 +355,27 @@ def create_app() -> FastAPI:
             configured=True,
             valid=None,
             message="Cookie 已保存到本机 DPAPI 加密凭据存储，请继续验证登录状态。",
+        )
+
+    @app.get("/api/v1/credentials/qqmusic-cookie", response_model=CredentialStatus)
+    async def qqmusic_cookie_status(
+        store: Annotated[CredentialStore, Depends(get_credential_store)],
+    ) -> CredentialStatus:
+        try:
+            configured = store.get_qqmusic_cookie() is not None
+        except CredentialStoreError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "credentials.unavailable",
+                    "message": "无法读取本机凭据存储。",
+                },
+            ) from exc
+        return CredentialStatus(
+            configured=configured,
+            message="已配置，点击验证以检查登录状态。"
+            if configured
+            else "尚未配置 QQ 音乐 Cookie。",
         )
 
     @app.delete(
@@ -464,6 +505,71 @@ def create_app() -> FastAPI:
                 detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
 
+    @app.get("/api/v1/library/songs/{song_id}/profile", response_model=SongProfileView | None)
+    async def get_song_profile(
+        song_id: UUID,
+        profiles: Annotated[ProfileService, Depends(get_profile_service)],
+    ) -> SongProfileView | None:
+        try:
+            return await profiles.get_profile(song_id)
+        except SongProfileNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "profile.notFound",
+                    "message": str(exc),
+                },
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "database.unavailable",
+                    "message": str(exc),
+                },
+            ) from exc
+
+    @app.put("/api/v1/library/songs/{song_id}/profile", response_model=SongProfileView)
+    async def update_song_profile(
+        song_id: UUID,
+        payload: ManualProfileUpdate,
+        profiles: Annotated[ProfileService, Depends(get_profile_service)],
+    ) -> SongProfileView:
+        try:
+            return await profiles.update_profile(song_id, payload)
+        except SongProfileNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "profile.notFound",
+                    "message": str(exc),
+                },
+            ) from exc
+        except SongProfileConflictError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "profile.conflict",
+                    "message": str(exc),
+                },
+            ) from exc
+        except (ModelRequestError, ModelConfigurationError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "profile.embeddingFailed",
+                    "message": "本地向量生成失败，原画像已保留。",
+                },
+            ) from exc
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "database.unavailable",
+                    "message": str(exc),
+                },
+            ) from exc
+
     @app.post(
         "/api/v1/profile-jobs",
         response_model=JobStatus,
@@ -471,11 +577,10 @@ def create_app() -> FastAPI:
     )
     async def create_profile_job(
         payload: ProfileJobCreate,
-        background_tasks: BackgroundTasks,
         credentials: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
         profiles: Annotated[ProfileService, Depends(get_profile_service)],
     ) -> JobStatus:
-        api_key = require_model_api_key(credentials)
+        require_model_api_key(credentials)
         try:
             result = await profiles.create_job(payload.mode)
         except ProfileJobConflictError as exc:
@@ -488,13 +593,22 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
-        if result.status == "queued":
-            background_tasks.add_task(
-                profiles.run_job,
-                result.jobId,
-                lambda: api_key,
-            )
         return result
+
+    @app.get("/api/v1/profile-jobs/latest", response_model=JobStatus | None)
+    async def latest_profile_job(
+        profiles: Annotated[ProfileService, Depends(get_profile_service)],
+    ) -> JobStatus | None:
+        try:
+            return await profiles.latest_job()
+        except LibraryDatabaseError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "database.unavailable",
+                    "message": str(exc),
+                },
+            ) from exc
 
     @app.get("/api/v1/jobs/{job_id}", response_model=JobStatus)
     async def get_job(
@@ -517,11 +631,10 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/jobs/{job_id}/retry", response_model=JobStatus)
     async def retry_job(
         job_id: str,
-        background_tasks: BackgroundTasks,
         credentials: Annotated[ModelCredentialStore, Depends(get_model_credential_store)],
         profiles: Annotated[ProfileService, Depends(get_profile_service)],
     ) -> JobStatus:
-        api_key = require_model_api_key(credentials)
+        require_model_api_key(credentials)
         try:
             result = await profiles.retry_job(_parse_uuid(job_id))
         except ProfileJobNotFoundError as exc:
@@ -539,11 +652,6 @@ def create_app() -> FastAPI:
                 status_code=503,
                 detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
-        background_tasks.add_task(
-            profiles.run_job,
-            result.jobId,
-            lambda: api_key,
-        )
         return result
 
     @app.post("/api/v1/search-sessions", response_model=TemporaryQueue)
@@ -590,9 +698,7 @@ def create_app() -> FastAPI:
             )
         return result
 
-    @app.post(
-        "/api/v1/search-sessions/{session_id}/refinements", response_model=TemporaryQueue
-    )
+    @app.post("/api/v1/search-sessions/{session_id}/refinements", response_model=TemporaryQueue)
     async def refine_search_session(
         session_id: str,
         payload: SearchRefinementCreate,
@@ -740,9 +846,7 @@ def create_app() -> FastAPI:
                 detail={"code": "database.unavailable", "message": str(exc)},
             ) from exc
 
-    @app.post(
-        "/api/v1/generated-playlists/{playlist_id}/restore", response_model=TemporaryQueue
-    )
+    @app.post("/api/v1/generated-playlists/{playlist_id}/restore", response_model=TemporaryQueue)
     async def restore_generated_playlist(
         playlist_id: str,
         search_service: Annotated[SemanticSearchService, Depends(get_semantic_search_service)],
@@ -797,6 +901,7 @@ def create_app() -> FastAPI:
                     status_code=404,
                     detail={"code": "playlist.notFound", "message": "临时播放队列不存在。"},
                 )
+            await search_service.validate_playback_queue(queue)
             return await pc.start_queue(queue)
         except HTTPException:
             raise

@@ -44,11 +44,15 @@ test(profile): cover locked field rebuild
 
 1. `scripts/setup.ps1`：检查版本、建立 `.venv` 并安装 API 与 Web 依赖；`-DemoOnly` 只准备演示所需的 Web 依赖。
 2. `scripts/doctor.ps1`：只读检查本机依赖、Docker、QQ 音乐与端口状态。
-3. `scripts/start.ps1`：启动 PostgreSQL、迁移、API 和 Web；`-Demo` 只启动零配置演示。
+3. `scripts/start.ps1`：启动 PostgreSQL、迁移、API、画像 worker 和 Web；`-Demo` 只启动零配置演示。
 4. `scripts/test.ps1`：运行 Ruff、pytest、ESLint、TypeScript、生产构建和依赖审计。
-5. `scripts/stop.ps1`：停止由启动脚本创建的 API 和 Web 进程，保留数据库数据。
+5. `scripts/stop.ps1`：停止由启动脚本创建的 API、画像 worker 和 Web 进程，保留数据库数据。
 
 GitHub Actions 使用等价命令。每条脚本失败时返回非零退出码，不隐藏错误。
+
+单独调试画像执行器时，在已迁移的本地环境运行 `python -m moodmusic_api.worker`，确保它与 API 的 `DATABASE_URL` 和 `MOODMUSIC_DATA_DIR` 一致。worker 停止时任务保持排队；执行中断后最多在租约到期（90 秒）后续跑。
+
+前端响应类型和 Zod 校验由 `python packages/contracts/generate_web_types.py` 从本地 OpenAPI 生成。修改 API 模型后重新生成，CI 会检查生成文件是否同步。
 
 ## 5 需求到交付
 

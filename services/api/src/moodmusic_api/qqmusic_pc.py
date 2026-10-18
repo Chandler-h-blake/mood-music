@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import os
+import re
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -74,15 +77,16 @@ class QQMusicPCService:
 
         resolved = [self._resolve_song(song, ids[song.sourceTrackId]) for song in queue.songs]
         async with self._lock:
-            self._playlist_id = queue.playlistId
-            self._songs = resolved
-            self._current_index = 0
-            self._queue_active = True
-            self._playback_generation += 1
-            self._natural_transition_armed = False
-            self._reset_transition_detection()
-            observed = await self._run_play_command()
-            self._current_observed = observed
+            with self._preserve_queue_on_failure():
+                self._playlist_id = queue.playlistId
+                self._songs = resolved
+                self._current_index = 0
+                self._queue_active = True
+                self._playback_generation += 1
+                self._natural_transition_armed = False
+                self._reset_transition_detection()
+                observed = await self._run_play_command()
+                self._current_observed = observed
             current = self._songs[0]
             result = PCPlaybackQueueResult(
                 status="completed" if observed else "acceptedUnconfirmed",
@@ -135,13 +139,14 @@ class QQMusicPCService:
                     artist=current.artist,
                     message="已经到达 MoodMusic 临时队列的边界。",
                 )
-            self._current_index = target
-            self._queue_active = True
-            self._playback_generation += 1
-            self._natural_transition_armed = False
-            self._reset_transition_detection()
-            observed = await self._run_play_command()
-            self._current_observed = observed
+            with self._preserve_queue_on_failure():
+                self._current_index = target
+                self._queue_active = True
+                self._playback_generation += 1
+                self._natural_transition_armed = False
+                self._reset_transition_detection()
+                observed = await self._run_play_command()
+                self._current_observed = observed
             current = self._songs[self._current_index]
             return PCPlaybackActionResult(
                 status="completed" if observed else "acceptedUnconfirmed",
@@ -192,10 +197,7 @@ class QQMusicPCService:
         async with self._lock:
             if self._transitioning:
                 return
-            if (
-                observed_generation is not None
-                and observed_generation != self._playback_generation
-            ):
+            if observed_generation is not None and observed_generation != self._playback_generation:
                 return
             if not self._queue_active or not self._songs or self._playlist_id is None:
                 return
@@ -203,7 +205,7 @@ class QQMusicPCService:
             current = self._songs[self._current_index]
             status = state.status
             title = state.title
-            if title and self._same_title(title, current.title):
+            if self._matches_song(state, current):
                 self._current_observed = True
                 self._reset_transition_detection()
                 remaining = (
@@ -218,11 +220,7 @@ class QQMusicPCService:
                     and state.durationMs > 10_000
                     and 0 <= remaining <= 3_000
                 )
-                if (
-                    self._natural_transition_armed
-                    and remaining is not None
-                    and remaining <= 500
-                ):
+                if self._natural_transition_armed and remaining is not None and remaining <= 500:
                     await self._advance_or_finish(status)
                 return
 
@@ -276,7 +274,7 @@ class QQMusicPCService:
             # without restarting playback. Otherwise issue one exact-song command.
             if title:
                 for index in range(self._current_index + 1, len(self._songs)):
-                    if self._same_title(title, self._songs[index].title):
+                    if self._matches_song(state, self._songs[index]):
                         self._current_index = index
                         self._playback_generation += 1
                         self._current_observed = True
@@ -295,12 +293,42 @@ class QQMusicPCService:
             self._reset_transition_detection()
             return
 
-        self._current_index += 1
-        self._playback_generation += 1
-        self._current_observed = False
-        self._natural_transition_armed = False
-        self._reset_transition_detection()
-        self._current_observed = await self._run_play_command()
+        with self._preserve_queue_on_failure():
+            self._current_index += 1
+            self._playback_generation += 1
+            self._current_observed = False
+            self._natural_transition_armed = False
+            self._reset_transition_detection()
+            self._current_observed = await self._run_play_command()
+
+    @contextmanager
+    def _preserve_queue_on_failure(self) -> Iterator[None]:
+        previous = (
+            self._playlist_id,
+            self._songs,
+            self._current_index,
+            self._current_observed,
+            self._queue_active,
+            self._natural_transition_armed,
+            self._unexpected_title,
+            self._unexpected_observations,
+        )
+        try:
+            yield
+        except (Exception, asyncio.CancelledError):
+            (
+                self._playlist_id,
+                self._songs,
+                self._current_index,
+                self._current_observed,
+                self._queue_active,
+                self._natural_transition_armed,
+                self._unexpected_title,
+                self._unexpected_observations,
+            ) = previous
+            # Invalidate observations sampled before or during the failed command.
+            self._playback_generation += 1
+            raise
 
     async def _run_play_command(self) -> bool:
         self._transitioning = True
@@ -337,7 +365,7 @@ class QQMusicPCService:
                 state = await self._media.get_state()
             except WindowsMediaError:
                 continue
-            if state.status == "playing" and self._same_title(state.title, song.title):
+            if state.status == "playing" and self._matches_song(state, song):
                 return True
         return False
 
@@ -442,7 +470,25 @@ class QQMusicPCService:
     def _same_title(actual: str | None, expected: str) -> bool:
         if actual is None:
             return False
+
         def normalize(value: str) -> str:
             return "".join(value.casefold().split())
 
         return normalize(actual) == normalize(expected)
+
+    @classmethod
+    def _matches_song(cls, state: PCPlaybackState, song: ResolvedQueueSong) -> bool:
+        if not cls._same_title(state.title, song.title):
+            return False
+        if not state.artist or not song.artist:
+            # Some QQ Music versions omit artists from Windows media metadata.
+            return True
+
+        def artists(value: str) -> set[str]:
+            return {
+                "".join(name.casefold().split())
+                for name in re.split(r"[/、&，,;；]", value)
+                if name.strip()
+            }
+
+        return artists(state.artist) == artists(song.artist)

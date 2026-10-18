@@ -56,6 +56,8 @@ try { & $python -m alembic upgrade head; if ($LASTEXITCODE -ne 0) { throw "数�
 finally { Pop-Location }
 
 $api = Start-Process -FilePath $python -ArgumentList "-m", "uvicorn", "moodmusic_api.main:app", "--host", "127.0.0.1", "--port", "8000" -WorkingDirectory (Join-Path $projectRoot "services\api") -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runDir "api.out.log") -RedirectStandardError (Join-Path $runDir "api.err.log") -PassThru
+$worker = Start-Process -FilePath $python -ArgumentList "-m", "moodmusic_api.worker" -WorkingDirectory (Join-Path $projectRoot "services\api") -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runDir "worker.out.log") -RedirectStandardError (Join-Path $runDir "worker.err.log") -PassThru
+Set-Content -LiteralPath (Join-Path $runDir "worker.pid") -Value $worker.Id
 $frameworkScript = '"' + (Join-Path $webDir "scripts\run-framework.mjs") + '"'
 $web = Start-Process -FilePath $node -ArgumentList $frameworkScript, "dev" -WorkingDirectory $webDir -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runDir "web.out.log") -RedirectStandardError (Join-Path $runDir "web.err.log") -PassThru
 Set-Content -LiteralPath (Join-Path $runDir "api.pid") -Value $api.Id
@@ -63,6 +65,7 @@ Set-Content -LiteralPath (Join-Path $runDir "web.pid") -Value $web.Id
 try {
     Wait-LocalUrl "http://127.0.0.1:8000/api/v1/health/ready"
     Wait-LocalUrl "http://127.0.0.1:5173/"
+    if ($worker.HasExited) { throw "画像 worker 启动失败，请查看 .run/worker.err.log。" }
 } catch {
     & (Join-Path $PSScriptRoot "stop.ps1")
     throw

@@ -135,6 +135,44 @@ async def test_first_vertical_slice() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cookie_status_never_returns_stored_cookie():
+    app, store = build_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.get("/api/v1/credentials/qqmusic-cookie")).json()[
+            "configured"
+        ] is False
+        store.cookie = "uin=12345678; qm_keyst=test-secret"
+        response = await client.get("/api/v1/credentials/qqmusic-cookie")
+        assert response.json()["configured"] is True
+        assert response.json()["valid"] is None
+        assert "test-secret" not in response.text
+        assert "12345678" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_latest_job_can_be_restored_without_model_credentials():
+    from moodmusic_api.models import JobStatus
+
+    job_id = uuid4()
+
+    class LatestProfileService:
+        async def latest_job(self):
+            return JobStatus(jobId=job_id, status="running", total=10, completed=4, failed=1)
+
+    app, _ = build_app()
+    app.dependency_overrides[get_profile_service] = LatestProfileService
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/v1/profile-jobs/latest")
+    assert response.status_code == 200
+    assert response.json()["jobId"] == str(job_id)
+    assert response.json()["completed"] == 4
+
+
+@pytest.mark.asyncio
 async def test_readiness_returns_service_unavailable_when_database_connection_is_refused() -> None:
     app, _ = build_app()
     app.dependency_overrides[get_database] = UnavailableDatabase
@@ -202,9 +240,45 @@ async def test_retry_job_maps_database_failure_to_service_unavailable() -> None:
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/api/v1/jobs/00000000-0000-0000-0000-000000000001/retry"
-        )
+        response = await client.post("/api/v1/jobs/00000000-0000-0000-0000-000000000001/retry")
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "database.unavailable"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method, suffix, payload",
+    [
+        ("POST", "/sorts", {"mode": "match"}),
+        ("DELETE", "/candidates/00000000-0000-0000-0000-000000000002", None),
+        ("POST", "/candidates/00000000-0000-0000-0000-000000000002/similar", None),
+    ],
+)
+async def test_candidate_conflicts_are_reported_as_409_for_all_queue_mutations(
+    method,
+    suffix,
+    payload,
+):
+    from moodmusic_api.semantic_search import CandidateSetMismatchError
+
+    class ChangedCandidates:
+        async def sort_queue(self, *args):
+            raise CandidateSetMismatchError("候选已变化")
+
+        remove_candidate = sort_queue
+        find_similar = sort_queue
+
+    app, _ = build_app()
+    app.dependency_overrides[get_semantic_search_service] = ChangedCandidates
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.request(
+            method,
+            "/api/v1/search-sessions/00000000-0000-0000-0000-000000000001" + suffix,
+            json=payload,
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "candidate.setChanged"
