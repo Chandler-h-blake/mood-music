@@ -92,4 +92,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - run: npm run build
-      - run: npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=low --registry=https://registry.npmjs.org
+      - name: Audit all dependencies with explicit unpatched development advisory
+        run: node --test scripts/audit-dependencies.test.mjs
+      - name: Check all dependency advisories
+        run: npm run audit:all
