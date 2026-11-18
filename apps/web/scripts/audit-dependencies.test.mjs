@@ -22,10 +22,28 @@ function audit(vulnerabilities, status = 1) {
 const finding = (url = deferred, node = "node_modules/braces") => ({
   severity: "high", nodes: [node], via: [{ url }],
 });
-test("reports the single unpatched development advisory without blocking", () => {
+test("reports the unpatched braces development advisory without blocking", () => {
   const result = audit({ braces: finding() });
   assert.equal(result.status, 0);
   assert.match(result.stderr, /UNPATCHED/);
+});
+
+test("reports the unpatched picomatch advisory and development dependents", () => {
+  const url = "https://github.com/advisories/GHSA-fc5q-39xc-vjpf";
+  const picomatch = finding(url, "node_modules/picomatch");
+  const vite = { ...finding(url, "node_modules/vite"), via: ["picomatch"] };
+  const result = audit({ picomatch, vite });
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /GHSA-fc5q-39xc-vjpf/);
+});
+
+test("blocks additional picomatch advisories and production dependents", () => {
+  const url = "https://github.com/advisories/GHSA-fc5q-39xc-vjpf";
+  const picomatch = finding(url, "node_modules/picomatch");
+  const production = { ...finding(url, "node_modules/react"), via: ["picomatch"] };
+  assert.equal(audit({ picomatch, production }).status, 1);
+  picomatch.via.push({ url: "https://github.com/advisories/new-vulnerability" });
+  assert.equal(audit({ picomatch }).status, 1);
 });
 test("blocks a new advisory even alongside the deferred advisory", () => {
   const braces = finding();

@@ -15,7 +15,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "pgvector>=0.4,<1",
   "pydantic>=2.11,<3",
-  "sqlalchemy>=2.0,<3",
+  "sqlalchemy[asyncio]>=2.0,<3",
   "uvicorn[standard]>=0.35,<1",
 ]
 

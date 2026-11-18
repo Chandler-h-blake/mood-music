@@ -1,9 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-// Only this unpatched development-tool advisory is deferred. Never suppress
+// Only these unpatched development-tool advisories are deferred. Never suppress
 // unrelated findings or production dependencies, including transitive ones.
-const deferred = "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm";
+const deferred = new Map([
+  ["braces", "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm"],
+  ["picomatch", "https://github.com/advisories/GHSA-fc5q-39xc-vjpf"],
+]);
 const result = spawnSync(process.execPath, [process.env.npm_execpath,
   "audit", "--json", "--registry=https://registry.npmjs.org"], { encoding: "utf8" });
 if (result.error || ![0, 1].includes(result.status)) {
@@ -23,12 +26,13 @@ function isDeferred(name, visited = new Set()) {
   const next = new Set(visited).add(name);
   return item.via.every((source) => typeof source === "string"
     ? isDeferred(source, next)
-    : name === "braces" && source.url === deferred);
+    : deferred.has(name) && source.url === deferred.get(name));
 }
 let blocked = false;
 for (const [name, item] of Object.entries(findings)) {
   if (isDeferred(name)) {
-    console.warn(`UNPATCHED development dependency: ${name} (${item.severity}); ${deferred}`);
+    console.warn(`UNPATCHED development dependency: ${name} (${item.severity})`);
+    console.warn(JSON.stringify(item.via, null, 2));
   } else {
     blocked = true;
     console.error(`BLOCKED: ${name} (${item.severity})`);
