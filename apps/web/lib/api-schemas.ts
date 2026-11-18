@@ -345,5 +345,5 @@ export const ValidationErrorSchema: z.ZodType<Api.ValidationError> = z.lazy(() =
   "msg": z.string(),
   "type": z.string(),
   "input": z.unknown(),
-  "ctx": z.record(z.unknown()),
+  "ctx": z.record(z.string(), z.unknown()),
 }));

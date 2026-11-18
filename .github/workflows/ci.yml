@@ -75,7 +75,7 @@ jobs:
 
   web:
     name: Web · Node 22
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: apps/web
@@ -94,7 +94,7 @@ jobs:
       - run: npm run build
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=low --registry=https://registry.npmjs.org
-      - name: Audit all dependencies with explicit unpatched development advisory
+      - name: Test dependency audit policy
         run: node --test scripts/audit-dependencies.test.mjs
       - name: Check all dependency advisories
         run: npm run audit:all

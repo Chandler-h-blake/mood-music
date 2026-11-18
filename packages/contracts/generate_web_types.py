@@ -63,7 +63,7 @@ def validator(schema: dict) -> str:
         return "z.array(" + validator(schema["items"]) + ")"
     if kind == "object":
         if "properties" not in schema:
-            return "z.record(z.unknown())"
+            return "z.record(z.string(), z.unknown())"
         return (
             "z.object({\n"
             + "\n".join(

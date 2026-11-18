@@ -1,7 +1,19 @@
 import { test, expect, type Page } from "@playwright/test";
 import fixture from "./fixtures/workspace.json" with { type: "json" };
-import { ManualProfileUpdateSchema } from "../lib/api-schemas";
+import { ManualProfileUpdateSchema, ValidationErrorSchema } from "../lib/api-schemas";
 import type { SongProfileView } from "../lib/api-types";
+
+test("校验错误保留不同类型的上下文值", () => {
+  const error = {
+    loc: ["body", "energy"],
+    msg: "数值超出范围",
+    type: "less_than_equal",
+    input: 2,
+    ctx: { le: 1, label: "能量", options: [0, 1], nested: { enabled: true } },
+  };
+  expect(ValidationErrorSchema.parse(error)).toEqual(error);
+  expect(ValidationErrorSchema.safeParse({ ...error, ctx: [] }).success).toBe(false);
+});
 
 // Every API request is intercepted. These tests never use system credentials,
 // launch QQ Music, or call a real model provider.
